@@ -25,9 +25,34 @@ Soundboard Binder odtwarza lokalne klipy na wybranym urządzeniu audio, pamięta
 
 ---
 
-<!-- Nagraj działanie aplikacji, zapisz jako docs/demo.gif i podmień poniższy adres. -->
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">
+        🟣 &nbsp; SOUNDBOARD BINDER &nbsp; / &nbsp; LIVE DEMO &nbsp; 🟢
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <img src="docs/demo-cover.webp" alt="Soundboard Binder — podgląd aplikacji" width="900">
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <details>
+          <summary><strong>▶ Odtwórz animowane demo</strong> &nbsp;·&nbsp; GIF 33,6 MB</summary>
+          <br>
+          <img src="docs/demo.gif" alt="Animowana prezentacja Soundboard Binder" width="900">
+        </details>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 <p align="center">
-  <img src="docs/demo-placeholder.svg" alt="Miejsce na GIF prezentujący Soundboard Binder" width="900">
+  <sub>Okładka ładuje się natychmiast. GIF jest pobierany po rozwinięciu demonstracji.</sub>
 </p>
 
 ---
@@ -40,14 +65,16 @@ Pobierz **`Soundboard-Binder-Setup.exe`** z zakładki [Releases](../../releases/
 
 > Windows może pokazać ostrzeżenie SmartScreen, dopóki plik nie zostanie podpisany certyfikatem code-signing.
 
-### 2. Zainstaluj wirtualny kabel
+### 2. Zainstaluj podpisany wirtualny kabel
 
-1. Pobierz [VB-CABLE z oficjalnej strony VB-Audio](https://vb-audio.com/Cable/).
+1. Pobierz najnowszy **VB-CABLE Driver Pack** z [oficjalnej strony VB-Audio](https://vb-audio.com/Cable/).
 2. Rozpakuj paczkę.
 3. Uruchom instalator sterownika jako administrator.
 4. Po instalacji uruchom ponownie komputer.
 
 VB-CABLE tworzy parę urządzeń. To, co aplikacja wysyła do wejścia kabla, pojawia się po drugiej stronie jako wirtualny mikrofon.
+
+> VB-CABLE jest oprogramowaniem donationware autorstwa [VB-Audio](https://vb-audio.com/). Jeżeli jest dla Ciebie przydatne, możesz wesprzeć jego twórców lub kupić licencję na stronie producenta.
 
 ### 3. Ustaw routing
 

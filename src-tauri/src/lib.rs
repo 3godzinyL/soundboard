@@ -99,8 +99,11 @@ impl AppState {
             .unwrap_or_default();
 
         for sound in &mut sounds {
-            if (sound.duration_ms == 0 || sound.meter_profile.is_empty()) && Path::new(&sound.path).exists() {
-                if let Ok((duration_ms, meter_profile)) = analyze_audio_file(Path::new(&sound.path)) {
+            if (sound.duration_ms == 0 || sound.meter_profile.is_empty())
+                && Path::new(&sound.path).exists()
+            {
+                if let Ok((duration_ms, meter_profile)) = analyze_audio_file(Path::new(&sound.path))
+                {
                     sound.duration_ms = duration_ms;
                     sound.meter_profile = meter_profile;
                 }
@@ -132,7 +135,8 @@ impl AppState {
 
         let path = config_file_path()?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("Nie udało się utworzyć katalogu config: {e}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Nie udało się utworzyć katalogu config: {e}"))?;
         }
 
         let json = serde_json::to_string_pretty(&persisted)
@@ -157,7 +161,8 @@ impl AppState {
             } else {
                 (position_ms as f32 / playback.duration_ms as f32).clamp(0.0, 1.0)
             };
-            let signal_level_01 = level_for_position(&playback.meter_profile, position_ms) * self.volume;
+            let signal_level_01 =
+                level_for_position(&playback.meter_profile, position_ms) * self.volume;
             let signal_dbfs = dbfs_from_level(signal_level_01);
 
             PlaybackStatusDto {
@@ -204,7 +209,8 @@ fn library_dir() -> Result<PathBuf, String> {
         .or_else(dirs::data_dir)
         .ok_or_else(|| "Brak katalogu danych aplikacji".to_string())?;
     let dir = base.join("soundboard-binder").join("library");
-    fs::create_dir_all(&dir).map_err(|e| format!("Nie udało się utworzyć katalogu biblioteki: {e}"))?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Nie udało się utworzyć katalogu biblioteki: {e}"))?;
     Ok(dir)
 }
 
@@ -266,7 +272,8 @@ fn level_for_position(profile: &[u8], position_ms: u64) -> f32 {
 }
 
 fn analyze_audio_file(path: &Path) -> Result<(u64, Vec<u8>), String> {
-    let file = File::open(path).map_err(|e| format!("Nie udało się otworzyć pliku do analizy: {e}"))?;
+    let file =
+        File::open(path).map_err(|e| format!("Nie udało się otworzyć pliku do analizy: {e}"))?;
     let decoder = Decoder::try_from(BufReader::new(file))
         .map_err(|e| format!("Nie udało się zdekodować pliku: {e}"))?;
 
@@ -334,15 +341,24 @@ fn list_output_devices_impl() -> Result<Vec<DeviceDto>, String> {
 
     let mut result = Vec::new();
     for device in devices {
-        let name = device.name().unwrap_or_else(|_| "Unknown device".to_string());
-        result.push(DeviceDto {
-            id: name.clone(),
-            name,
-        });
+        result.push(device_to_dto(&device));
     }
 
     result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(result)
+}
+
+fn device_to_dto(device: &cpal::Device) -> DeviceDto {
+    let name = device
+        .description()
+        .map(|description| description.name().to_string())
+        .unwrap_or_else(|_| "Unknown device".to_string());
+    let id = device
+        .id()
+        .map(|id| id.to_string())
+        .unwrap_or_else(|_| name.clone());
+
+    DeviceDto { id, name }
 }
 
 fn find_output_device(device_name: Option<&str>) -> Result<cpal::Device, String> {
@@ -354,17 +370,15 @@ fn find_output_device(device_name: Option<&str>) -> Result<cpal::Device, String>
             .map_err(|e| format!("Nie udało się pobrać output devices: {e}"))?;
 
         for device in devices {
-            let current_name = device.name().unwrap_or_default();
-            if current_name == device_name {
+            let dto = device_to_dto(&device);
+            if dto.id == device_name || dto.name == device_name {
                 return Ok(device);
             }
         }
-
-        Err(format!("Nie znaleziono urządzenia: {device_name}"))
-    } else {
-        host.default_output_device()
-            .ok_or_else(|| "Brak domyślnego urządzenia wyjściowego".to_string())
     }
+
+    host.default_output_device()
+        .ok_or_else(|| "Brak dostępnego urządzenia wyjściowego".to_string())
 }
 
 fn add_sound_path(app: &mut AppState, path: PathBuf) -> Result<(), String> {
@@ -451,7 +465,10 @@ fn list_sounds(state: tauri::State<'_, Mutex<AppState>>) -> Result<Vec<SoundDto>
 }
 
 #[tauri::command]
-fn add_sounds(paths: Vec<String>, state: tauri::State<'_, Mutex<AppState>>) -> Result<Vec<SoundDto>, String> {
+fn add_sounds(
+    paths: Vec<String>,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<Vec<SoundDto>, String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
 
     for raw in paths {
@@ -464,7 +481,10 @@ fn add_sounds(paths: Vec<String>, state: tauri::State<'_, Mutex<AppState>>) -> R
 }
 
 #[tauri::command]
-fn import_from_url(url: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<Vec<SoundDto>, String> {
+fn import_from_url(
+    url: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<Vec<SoundDto>, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return Err("Wklej link do YouTube, Shorts albo TikToka".into());
@@ -493,7 +513,10 @@ fn list_output_devices() -> Result<Vec<DeviceDto>, String> {
 }
 
 #[tauri::command]
-fn set_selected_device(device_id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn set_selected_device(
+    device_id: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
     let devices = list_output_devices_impl()?;
     if !devices.iter().any(|d| d.id == device_id) {
         return Err("Wybrane urządzenie już nie istnieje".into());
@@ -507,9 +530,26 @@ fn set_selected_device(device_id: String, state: tauri::State<'_, Mutex<AppState
 #[tauri::command]
 fn get_selected_device(state: tauri::State<'_, Mutex<AppState>>) -> Result<Option<String>, String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
-    if app.selected_device.is_none() {
-        app.selected_device = list_output_devices_impl()?.into_iter().next().map(|d| d.id);
+    let devices = list_output_devices_impl()?;
+    let resolved_selected = app.selected_device.as_ref().and_then(|selected| {
+        devices
+            .iter()
+            .find(|device| device.id == *selected || device.name == *selected)
+            .map(|device| device.id.clone())
+    });
+
+    if resolved_selected.is_none() || resolved_selected != app.selected_device {
+        let default_name = cpal::default_host()
+            .default_output_device()
+            .map(|device| device_to_dto(&device).id)
+            .filter(|id| devices.iter().any(|device| device.id == *id));
+
+        app.selected_device = resolved_selected
+            .or(default_name)
+            .or_else(|| devices.first().map(|device| device.id.clone()));
+        let _ = app.persist();
     }
+
     Ok(app.selected_device.clone())
 }
 
@@ -546,7 +586,8 @@ fn play_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<()
         .position(|s| s.id == id)
         .ok_or_else(|| "Nie znaleziono dźwięku".to_string())?;
 
-    let needs_analysis = app.sounds[sound_index].duration_ms == 0 || app.sounds[sound_index].meter_profile.is_empty();
+    let needs_analysis = app.sounds[sound_index].duration_ms == 0
+        || app.sounds[sound_index].meter_profile.is_empty();
     if needs_analysis {
         let path = PathBuf::from(&app.sounds[sound_index].path);
         let (duration_ms, meter_profile) = analyze_audio_file(&path)?;
@@ -568,7 +609,8 @@ fn play_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<()
         .map_err(|e| format!("Nie udało się otworzyć output stream: {e}"))?;
     sink.log_on_drop(false);
 
-    let player = rodio_play(sink.mixer(), reader).map_err(|e| format!("Nie udało się odtworzyć pliku: {e}"))?;
+    let player = rodio_play(sink.mixer(), reader)
+        .map_err(|e| format!("Nie udało się odtworzyć pliku: {e}"))?;
     player.set_volume(app.volume);
 
     app.playback = Some(ActivePlayback {
@@ -585,7 +627,9 @@ fn play_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<()
 }
 
 #[tauri::command]
-fn get_playback_status(state: tauri::State<'_, Mutex<AppState>>) -> Result<PlaybackStatusDto, String> {
+fn get_playback_status(
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<PlaybackStatusDto, String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
     Ok(app.playback_status())
 }

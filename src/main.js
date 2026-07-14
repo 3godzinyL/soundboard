@@ -112,9 +112,14 @@ async function removeSound(id) {
 }
 
 async function playSound(id) {
-  await invoke('play_sound', { id });
-  await refreshState();
-  startPlaybackPolling();
+  try {
+    await invoke('play_sound', { id });
+    await refreshState();
+    startPlaybackPolling();
+  } catch (error) {
+    alert(`Nie udało się odtworzyć dźwięku: ${String(error)}`);
+    await refreshState();
+  }
 }
 
 async function stopPlayback() {
@@ -123,8 +128,13 @@ async function stopPlayback() {
 }
 
 async function onDeviceChange(deviceId) {
-  state.selectedDevice = deviceId;
-  await invoke('set_selected_device', { deviceId });
+  try {
+    state.selectedDevice = deviceId;
+    await invoke('set_selected_device', { deviceId });
+  } catch (error) {
+    alert(`Nie udało się wybrać urządzenia: ${String(error)}`);
+    await refreshState();
+  }
 }
 
 async function onVolumeChange(value) {
@@ -206,7 +216,8 @@ function render() {
           <div class="section-title">Routing</div>
           <div class="field-block">
             <label class="field-label" for="device-select">Output device</label>
-            <select class="input" id="device-select">
+            <select class="input" id="device-select" ${state.devices.length === 0 ? 'disabled' : ''}>
+              ${state.devices.length === 0 ? '<option>Brak urządzeń audio</option>' : ''}
               ${state.devices.map((device) => `
                 <option value="${escapeHtml(device.id)}" ${device.id === state.selectedDevice ? 'selected' : ''}>
                   ${escapeHtml(device.name)}

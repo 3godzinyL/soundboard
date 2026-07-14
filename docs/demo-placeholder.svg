@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Miejsce na demo Soundboard Binder</title>
+  <desc id="desc">Zastąp ten plik nagraniem docs/demo.gif.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#090b12"/>
+      <stop offset="1" stop-color="#17112a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="675" rx="28" fill="url(#bg)"/>
+  <circle cx="600" cy="338" r="310" fill="url(#glow)"/>
+  <rect x="28" y="28" width="1144" height="619" rx="20" fill="none" stroke="#8b5cf6" stroke-opacity=".55" stroke-width="2" stroke-dasharray="12 12"/>
+  <g transform="translate(600 277)" fill="none" stroke="#c4b5fd" stroke-width="12" stroke-linecap="round">
+    <path d="M-78 10v-42M-39 54V-76M0 86V-108M39 54V-76M78 10v-42"/>
+  </g>
+  <text x="600" y="430" fill="#f8fafc" font-family="Segoe UI, Arial, sans-serif" font-size="42" font-weight="700" text-anchor="middle">TU WLECI DEMO.GIF</text>
+  <text x="600" y="480" fill="#a1a1aa" font-family="Segoe UI, Arial, sans-serif" font-size="22" text-anchor="middle">zastąp odnośnik w README plikiem docs/demo.gif</text>
+</svg>

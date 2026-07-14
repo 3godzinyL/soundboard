@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "node scripts/tauri.mjs",
+    "build:portable": "node scripts/tauri.mjs portable",
+    "build:installer": "node scripts/tauri.mjs installer"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

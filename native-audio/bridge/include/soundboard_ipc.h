@@ -32,6 +32,8 @@ SB_API int __cdecl sb_set_output_device(const wchar_t* endpoint_id);
 SB_API int __cdecl sb_set_virtual_capture_device(const wchar_t* endpoint_id);
 SB_API int __cdecl sb_set_gains(float microphone_gain, float sound_gain);
 SB_API void __cdecl sb_get_gains(float* microphone_gain, float* sound_gain);
+SB_API int __cdecl sb_set_monitor_gain(float monitor_gain);
+SB_API float __cdecl sb_get_monitor_gain(void);
 SB_API uint32_t __cdecl sb_push_audio(const float* samples, uint32_t frames, uint32_t channels);
 SB_API uint32_t __cdecl sb_pop_audio(float* stereo_samples, uint32_t frames);
 SB_API void __cdecl sb_clear_audio(void);

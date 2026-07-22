@@ -4,16 +4,16 @@
 #include <stdint.h>
 
 #define SB_PROTOCOL_MAGIC 0x53424155u
-#define SB_PROTOCOL_VERSION 2u
+#define SB_PROTOCOL_VERSION 3u
 #define SB_SAMPLE_RATE 48000u
 #define SB_CHANNELS 2u
 #define SB_AUDIO_CAPACITY_FRAMES (SB_SAMPLE_RATE * 2u)
 #define SB_DEVICE_ID_CAPACITY 512u
 #define SB_ERROR_CAPACITY 256u
 
-#define SB_MAPPING_NAME L"Local\\SoundboardBinder.Audio.v2"
-#define SB_AUDIO_EVENT_NAME L"Local\\SoundboardBinder.AudioData.v2"
-#define SB_CONFIG_EVENT_NAME L"Local\\SoundboardBinder.Config.v2"
+#define SB_MAPPING_NAME L"Local\\SoundboardBinder.Audio.v3"
+#define SB_AUDIO_EVENT_NAME L"Local\\SoundboardBinder.AudioData.v3"
+#define SB_CONFIG_EVENT_NAME L"Local\\SoundboardBinder.Config.v3"
 
 enum SbEngineState {
     SB_ENGINE_STOPPED = 0,
@@ -31,6 +31,7 @@ typedef struct SbSharedState {
     volatile LONG config_generation;
     volatile LONG mic_gain_milli;
     volatile LONG sound_gain_milli;
+    volatile LONG monitor_gain_milli;
     volatile LONG mic_level_milli;
     volatile LONG mix_level_milli;
     volatile LONG underruns;

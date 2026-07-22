@@ -50,11 +50,15 @@ public:
 private:
     void accept_microphone(const float* samples, uint32_t frames);
     void render_mix(float* destination, uint32_t frames);
+    void render_monitor(float* destination, uint32_t frames);
 
     StereoRingBuffer microphone_{48000u * 2u};
+    StereoRingBuffer monitor_{48000u};
     WasapiCapture capture_;
     WasapiRender render_;
+    WasapiRender monitor_render_;
     std::atomic<float> microphone_peak_{0.0f};
     std::atomic<uint32_t> underruns_{0};
+    std::atomic<bool> monitor_active_{false};
 };
 

@@ -11,7 +11,7 @@
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     HANDLE instance_mutex =
-        CreateMutexW(nullptr, TRUE, L"Local\\SoundboardBinder.AudioEngine.v2");
+        CreateMutexW(nullptr, TRUE, L"Local\\SoundboardBinder.AudioEngine.v3");
     if (instance_mutex == nullptr) {
         return 4;
     }

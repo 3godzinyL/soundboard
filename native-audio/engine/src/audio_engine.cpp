@@ -344,10 +344,24 @@ bool AudioEngine::start(const std::wstring& input_id, const std::wstring& output
         capture_.stop();
         return false;
     }
+
+    // Best-effort local monitor: play the bind on the default output device so
+    // the operator hears it too. Failure here (e.g. no default output) must not
+    // take down the main cable path.
+    monitor_.clear();
+    std::wstring monitor_error;
+    monitor_active_.store(monitor_render_.start(
+        std::wstring(),
+        [this](float* destination, uint32_t frames) { render_monitor(destination, frames); },
+        monitor_error));
+
     return true;
 }
 
 void AudioEngine::stop() {
+    monitor_render_.stop();
+    monitor_active_.store(false);
+    monitor_.clear();
     render_.stop();
     capture_.stop();
     microphone_.clear();
@@ -378,6 +392,9 @@ void AudioEngine::render_mix(float* destination, uint32_t frames) {
         std::fill_n(sound.data(), static_cast<size_t>(chunk) * 2u, 0.0f);
         const uint32_t microphone_frames = microphone_.pop(microphone.data(), chunk);
         const uint32_t sound_frames = sb_pop_audio(sound.data(), chunk);
+        if (monitor_active_.load(std::memory_order_relaxed) && sound_frames > 0) {
+            monitor_.push(sound.data(), sound_frames);
+        }
         if (microphone_frames < chunk) {
             underruns_.fetch_add(1, std::memory_order_relaxed);
         }
@@ -405,4 +422,26 @@ void AudioEngine::render_mix(float* destination, uint32_t frames) {
         microphone_peak_.load(std::memory_order_relaxed) * microphone_gain,
         mixed_peak,
         underruns_.load(std::memory_order_relaxed));
+}
+
+void AudioEngine::render_monitor(float* destination, uint32_t frames) {
+    const float monitor_gain = sb_get_monitor_gain();
+    std::array<float, 4096> sound{};
+    uint32_t processed = 0;
+    while (processed < frames) {
+        const uint32_t chunk = (std::min)(frames - processed, 2048u);
+        std::fill_n(sound.data(), static_cast<size_t>(chunk) * 2u, 0.0f);
+        const uint32_t popped = monitor_.pop(sound.data(), chunk);
+        for (uint32_t frame = 0; frame < chunk; ++frame) {
+            for (uint32_t channel = 0; channel < 2u; ++channel) {
+                const size_t source_index = static_cast<size_t>(frame) * 2u + channel;
+                const size_t destination_index =
+                    static_cast<size_t>(processed + frame) * 2u + channel;
+                destination[destination_index] = frame < popped
+                    ? std::tanh(sound[source_index] * monitor_gain)
+                    : 0.0f;
+            }
+        }
+        processed += chunk;
+    }
 }

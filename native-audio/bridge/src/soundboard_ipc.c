@@ -18,8 +18,9 @@ static LONG clamp_milli(float value) {
     }
     if (value < 0.0f) {
         value = 0.0f;
-    } else if (value > 6.0f) {
-        value = 6.0f;
+    } else if (value > 24.0f) {
+        /* Overdrive stage lets the soundboard gain reach 600% x4 = 2400%. */
+        value = 24.0f;
     }
     return (LONG)(value * 1000.0f + 0.5f);
 }
@@ -193,6 +194,18 @@ void __cdecl sb_get_gains(float* microphone_gain, float* sound_gain) {
     if (sound_gain != NULL) {
         *sound_gain = g_state == NULL ? 1.0f : atomic_read(&g_state->sound_gain_milli) / 1000.0f;
     }
+}
+
+int __cdecl sb_set_monitor_gain(float monitor_gain) {
+    if (g_state == NULL) {
+        return 0;
+    }
+    InterlockedExchange(&g_state->monitor_gain_milli, clamp_milli(monitor_gain));
+    return 1;
+}
+
+float __cdecl sb_get_monitor_gain(void) {
+    return g_state == NULL ? 0.0f : atomic_read(&g_state->monitor_gain_milli) / 1000.0f;
 }
 
 uint32_t __cdecl sb_push_audio(const float* samples, uint32_t frames, uint32_t channels) {

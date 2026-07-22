@@ -91,6 +91,7 @@ flowchart TB
     end
 
     Apps["🎧 Discord · gra · OBS · przeglądarka"]
+    Monitor["🔈 Twoje głośniki / słuchawki<br/>lokalny podsłuch binda"]
 
     Mic --> Cap
     Files --> Decode
@@ -106,6 +107,7 @@ flowchart TB
     Rend --> Cable
     Cable --> Default
     Default --> Apps
+    Mix -->|podsłuch binda| Monitor
 ```
 
 To nie jest wstrzykiwanie DLL do Discorda ani hookowanie obcych procesów. Zarówno Rust, jak i ukryty proces C++ ładują własną DLL C, a komunikacja idzie przez wersjonowaną pamięć współdzieloną i eventy Windows.
@@ -130,7 +132,7 @@ To nie jest wstrzykiwanie DLL do Discorda ani hookowanie obcych procesów. Zaró
       │  PCM (push_audio)                    │  gainy · poziomy · status
       ▼                                      ▼
 ━━ MOST C ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  native-audio/bridge/ · soundboard_ipc.dll
-   named shared memory · lock-free ring SPSC 2 s · eventy Windows · protokół IPC v2
+   named shared memory · lock-free ring SPSC 2 s · eventy Windows · protokół IPC v3
       │
       ▼
 ━━ SILNIK C++ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  native-audio/engine/ · ukryty proces .exe
@@ -155,6 +157,9 @@ Osobny proces audio oznacza, że zawieszenie WebView nie ucina od razu strumieni
 |---|---|
 | 🎙️ **Miks na żywo** | Twój głos + dowolny bind w jednym strumieniu, mieszane w czasie rzeczywistym w C++ |
 | 🎚️ **Niezależne wzmocnienia** | `Microphone gain` 0–300%, `Soundboard gain` 0–600% i dodatkowy `Overdrive` ×1–×4 (łącznie do 2400%) — wszystko w jednym panelu, z miękkim limiterem `tanh` na końcu |
+| 🔈 **Podsłuch (monitor)** | Osobny suwak `Monitor` gra bind także na Twoim domyślnym wyjściu (głośniki/słuchawki), 0–200%, niezależnie od tego, co leci na Discorda; 0% = wyłączony |
+| 🩺 **Self-test i diagnostyka** | Samotest C++ symuluje, czy bind jest słyszalny, a `scripts/diagnose.sh` sprawdza cały pipeline (toolchain, most C, silnik, sterownik, artefakty) i wypisuje raport |
+| 🚨 **Baner błędów** | Krytyczne problemy (brak sterownika, silnik nie wstał) pojawiają się jako baner u góry aplikacji; reszta sprawdzeń chodzi w tle i niczego nie blokuje |
 | 🧭 **Routing systemowy** | Wirtualny mikrofon ustawiany jako domyślny dla ról Console / Multimedia / Communications, z przywróceniem poprzedniego stanu |
 | 📊 **Podgląd na żywo** | Mierniki `MIC` i `FINAL MIX`, licznik XRUN, PID ukrytego silnika, wersja protokołu IPC |
 | ⏹️ **Sterowanie odtwarzaniem** | Play z kafelka, `Stop playback` i restart silnika bezpośrednio w panelu Native Audio Engine |
@@ -178,6 +183,11 @@ Osobny proces audio oznacza, że zawieszenie WebView nie ucina od razu strumieni
 - opcjonalnie `yt-dlp` + `ffmpeg` dla importu z URL.
 
 > **Nie musisz otwierać Visual Studio ani dodawać plików do żadnego projektu.** [`src-tauri/build.rs`](src-tauri/build.rs) sam wykrywa MSVC przez `vswhere`, kompiluje C i C++ poleceniem `cl` i osadza wyniki w binarce Rusta. Cały build jest sterowany komendami npm — IDE potrzebujesz tylko raz, żeby zainstalować sam kompilator C++.
+
+### Najszybciej — dwa kliknięcia
+
+- **`scripts\install-tools.bat`** — pobiera `yt-dlp` + `ffmpeg` (import z URL) i dodaje je do `PATH`; sprawdza też, czy masz Node, Rust i C++ Build Tools.
+- **`scripts\build.bat`** — robi `npm install` i pełny build produkcyjny do `release\` (Setup + Portable).
 
 ### Development
 
@@ -229,6 +239,14 @@ cargo run --example native_probe -- tone
 
 Przykłady diagnostyczne pokazują aktualny domyślny mikrofon, status IPC/engine oraz potrafią wysłać kontrolny ton 440 Hz do działającego miksera.
 
+Pełny health-check całego pipeline'u jednym poleceniem — toolchain → most C → silnik → sterownik → artefakty, z samotestem C++, który symuluje, czy bind jest słyszalny:
+
+```bash
+bash scripts/diagnose.sh
+```
+
+Skrypt wypisuje raport `OK / WARN / FAIL` i zwraca kod wyjścia `0` tylko wtedy, gdy nic krytycznego nie padło. Sam rdzeń audio (ring buffer + mikser + limiter + overdrive + monitor) ma osobny samotest offline w [`native-audio/selftest/`](native-audio/selftest/), niezależny od sprzętu.
+
 ---
 
 ## 📝 Czym właściwie jest Soundboard Binder
@@ -240,7 +258,7 @@ Silnik C++ przechwytuje wybrany fizyczny mikrofon, dekoder w Ruście zamienia pl
 W praktyce, po uruchomieniu:
 
 1. w panelu **Native audio engine** wybierz w **„Your real microphone”** swój prawdziwy mikrofon (lista pokazuje pełne etykiety, więc łatwo trafisz w swój zestaw);
-2. ustaw `Microphone gain`, `Soundboard gain` i — jeśli ma być naprawdę głośno — `Overdrive`;
+2. ustaw `Microphone gain`, `Soundboard gain` i — jeśli ma być naprawdę głośno — `Overdrive`; suwakiem `Monitor` włączysz podsłuch binda u siebie (0% = wyłączony);
 3. dodaj plik albo wklej link i kliknij **Play**, a `Stop playback` masz w tym samym panelu;
 4. w Discordzie/grze zostaw wejście na `Default` (szczegóły niżej).
 
@@ -271,6 +289,7 @@ Po normalnym wyjściu aplikacja natychmiast przywraca wcześniejsze urządzenia 
 - **Lock-free audio IPC.** Dwusekundowy bufor SPSC przenosi stereo `float32` przy 48 kHz pomiędzy Rustem i C++ bez serializacji JSON i bez lokalnego serwera.
 - **Osobny proces audio.** Zawieszenie WebView nie zatrzymuje od razu strumienia. Heartbeat wykrywa śmierć UI i bezpiecznie kończy engine.
 - **Miks głosu i bindów.** Wzmocnienie mikrofonu i soundboardu jest niezależne, a dodatkowy stopień `Overdrive` (×4) potrafi wypchnąć bind aż do 2400%; na końcu miękki limiter `tanh` zamienia przester w nasycenie zamiast brutalnego cyfrowego clippingu.
+- **Lokalny podsłuch.** Drugi, niezależny strumień WASAPI render kieruje sam bind na Twoje domyślne wyjście z osobnym wzmocnieniem — słyszysz go u siebie, bez domieszania własnego głosu. Jest best-effort: brak domyślnego wyjścia nie wywala głównego toru na kabel.
 - **System-wide routing.** Silnik zapisuje wcześniejsze endpointy dla ról Console, Multimedia i Communications, przełącza Windows na wirtualny miks i warunkowo przywraca poprzedni stan (nieudokumentowany `IPolicyConfig`).
 - **Zmiana nazwy urządzenia.** Nazwa wirtualnego mikrofonu jest zapisywana jako `PKEY_Device_FriendlyName` na endpoincie kabla — w elewowanym procesie pomocniczym.
 - **Stabilne urządzenia.** Konfiguracja przechowuje surowe identyfikatory endpointów WASAPI, nie tylko zmienne nazwy widoczne w panelu dźwięku.
@@ -296,9 +315,10 @@ Oba warianty zawierają frontend, backend Rust, natywną DLL C, ukryty engine C+
 ```text
 soundboard-tauri-rust/
 ├── native-audio/
-│   ├── protocol/              # wspólny layout IPC v2 (shared memory + eventy)
+│   ├── protocol/              # wspólny layout IPC v3 (shared memory + eventy)
 │   ├── bridge/                # DLL w C: ABI + named shared memory
-│   └── engine/                # ukryty EXE C++: WASAPI capture/render + mixer + routing
+│   ├── engine/                # ukryty EXE C++: WASAPI capture/render + mixer + routing
+│   └── selftest/              # samotest rdzenia audio (ring buffer + mixer, offline)
 ├── src/                       # UI Vite / JavaScript / CSS
 ├── src-tauri/
 │   ├── src/native_audio.rs    # lifecycle, FFI, ekstrakcja runtime i dekoder PCM
@@ -308,7 +328,11 @@ soundboard-tauri-rust/
 │   ├── build.rs               # kompilacja C/C++ przez MSVC i osadzanie binarek
 │   ├── examples/              # diagnostyka endpointów i IPC
 │   └── resources/vbcable/     # oficjalny Pack45 + nota licencyjna
-├── scripts/tauri.mjs          # odporny runner + build Setup/Portable
+├── scripts/
+│   ├── tauri.mjs              # odporny runner + build Setup/Portable
+│   ├── install-tools.bat     # pobiera yt-dlp + ffmpeg, ustawia PATH
+│   ├── build.bat             # jedno kliknięcie: npm install + build:all
+│   └── diagnose.sh           # health-check całego pipeline'u + raport
 ├── docs/                      # okładka i GIF demo
 └── release/                   # lokalne artefakty produkcyjne
 ```

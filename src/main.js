@@ -35,6 +35,8 @@ const state = {
   isRenamingMicrophone: false,
   isRestartingEngine: false,
   volume: 1.0,
+  soundOverdrive: 1.0,
+  monitorGain: 0.0,
   filter: '',
   urlInput: '',
   isImporting: false,
@@ -68,6 +70,10 @@ function formatVolume(value) {
   return `${percent}%`;
 }
 
+function formatMultiplier(value) {
+  return `×${(Number(value) || 1).toFixed(1)}`;
+}
+
 function formatDb(value) {
   if (!Number.isFinite(value) || value <= -90) return '-∞ dBFS';
   return `${value > 0 ? '+' : ''}${value.toFixed(1)} dBFS`;
@@ -88,12 +94,14 @@ function escapeHtml(value) {
 }
 
 async function refreshState() {
-  const [sounds, inputDevices, selectedInputDevice, microphoneGain, volume, playback, virtualAudio, nativeAudio] = await Promise.all([
+  const [sounds, inputDevices, selectedInputDevice, microphoneGain, volume, soundOverdrive, monitorGain, playback, virtualAudio, nativeAudio] = await Promise.all([
     invoke('list_sounds'),
     invoke('list_input_devices'),
     invoke('get_selected_input_device'),
     invoke('get_microphone_gain'),
     invoke('get_volume'),
+    invoke('get_sound_overdrive'),
+    invoke('get_monitor_gain'),
     invoke('get_playback_status'),
     invoke('get_virtual_audio_status'),
     invoke('get_native_audio_status')
@@ -104,6 +112,8 @@ async function refreshState() {
   state.selectedInputDevice = selectedInputDevice;
   state.microphoneGain = Number(microphoneGain ?? 1);
   state.volume = Number(volume ?? 1);
+  state.soundOverdrive = Number(soundOverdrive ?? 1);
+  state.monitorGain = Number(monitorGain ?? 0);
   state.playback = playback;
   state.virtualAudio = virtualAudio;
   state.nativeAudio = nativeAudio;
@@ -242,6 +252,20 @@ async function onVolumeChange(value) {
   await invoke('set_volume', { volume: state.volume });
 }
 
+async function onSoundOverdriveChange(value) {
+  state.soundOverdrive = Number(value);
+  const pill = document.querySelector('.sound-overdrive-pill');
+  if (pill) pill.textContent = formatMultiplier(state.soundOverdrive);
+  await invoke('set_sound_overdrive', { overdrive: state.soundOverdrive });
+}
+
+async function onMonitorGainChange(value) {
+  state.monitorGain = Number(value);
+  const pill = document.querySelector('.monitor-gain-pill');
+  if (pill) pill.textContent = formatVolume(state.monitorGain);
+  await invoke('set_monitor_gain', { gain: state.monitorGain });
+}
+
 async function pollPlayback() {
   try {
     const previousEngineState = `${state.nativeAudio.ready}:${state.nativeAudio.state}:${state.nativeAudio.error || ''}`;
@@ -299,10 +323,27 @@ function currentSound() {
   return state.sounds.find((sound) => sound.id === state.playback.soundId) || null;
 }
 
+function criticalAlert() {
+  const na = state.nativeAudio;
+  const va = state.virtualAudio;
+  if (va.restartRequired) {
+    return 'Sterownik audio zainstalowany — zrestartuj Windows, aby aktywować wirtualny mikrofon.';
+  }
+  if (va.error) {
+    return `Sterownik audio: ${va.error}`;
+  }
+  if (na.state === 'error') {
+    return na.error ? `Silnik audio: ${na.error}` : 'Silnik audio nie wystartował — kliknij „Restart audio engine".';
+  }
+  return null;
+}
+
 function render() {
   const sounds = filteredSounds();
+  const alert = criticalAlert();
 
   document.querySelector('#app').innerHTML = `
+    ${alert ? `<div class="top-alert" role="alert">⚠️ ${escapeHtml(alert)}</div>` : ''}
     <div class="shell">
       <aside class="sidebar">
         <div class="brand-block">
@@ -370,6 +411,24 @@ function render() {
           </div>
           <input id="volume-range" class="range" type="range" min="0" max="6" step="0.01" value="${state.volume}" />
           <div class="range-scale"><span>0%</span><span>300%</span><span>600%</span></div>
+          <div class="section-head compact-head">
+            <div>
+              <div class="field-label">Overdrive</div>
+              <div class="section-caption">Multiply the soundboard past 600% — expect grit</div>
+            </div>
+            <div class="gain-pill sound-overdrive-pill">${formatMultiplier(state.soundOverdrive)}</div>
+          </div>
+          <input id="overdrive-range" class="range" type="range" min="1" max="4" step="0.05" value="${state.soundOverdrive}" />
+          <div class="range-scale"><span>×1</span><span>×2.5</span><span>×4</span></div>
+          <div class="section-head compact-head">
+            <div>
+              <div class="field-label">Monitor</div>
+              <div class="section-caption">Hear the bind on your own speakers · 0% = off</div>
+            </div>
+            <div class="gain-pill monitor-gain-pill">${formatVolume(state.monitorGain)}</div>
+          </div>
+          <input id="monitor-range" class="range" type="range" min="0" max="2" step="0.01" value="${state.monitorGain}" />
+          <div class="range-scale"><span>0%</span><span>100%</span><span>200%</span></div>
           <div class="native-meters">
             <div class="native-meter-row">
               <div class="native-meter-label"><span>MIC</span><strong class="microphone-meter-value">${levelPercent(state.nativeAudio.microphoneLevel01)}%</strong></div>
@@ -541,6 +600,8 @@ function render() {
   document.getElementById('microphone-gain-range')?.addEventListener('input', (e) => onMicrophoneGainChange(e.target.value));
   document.getElementById('stop-btn')?.addEventListener('click', stopPlayback);
   document.getElementById('volume-range')?.addEventListener('input', (e) => onVolumeChange(e.target.value));
+  document.getElementById('overdrive-range')?.addEventListener('input', (e) => onSoundOverdriveChange(e.target.value));
+  document.getElementById('monitor-range')?.addEventListener('input', (e) => onMonitorGainChange(e.target.value));
   document.getElementById('microphone-name')?.addEventListener('input', (e) => {
     state.microphoneNameInput = e.target.value;
     state.microphoneNameDirty = true;

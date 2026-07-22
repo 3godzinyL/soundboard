@@ -1,6 +1,8 @@
+mod native_audio;
+mod virtual_audio;
+
 use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::stream::{play as rodio_play, DeviceSinkBuilder, MixerDeviceSink};
-use rodio::{Decoder, Player, Source};
+use rodio::{Decoder, Source};
 use serde::{Deserialize, Serialize};
 use std::f32;
 use std::fs::{self, File};
@@ -42,7 +44,27 @@ struct SoundDto {
 #[derive(Debug, Clone, Serialize)]
 struct DeviceDto {
     id: String,
+    #[serde(rename = "rawId")]
+    raw_id: String,
     name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct NativeAudioStatusDto {
+    available: bool,
+    ready: bool,
+    state: String,
+    #[serde(rename = "protocolVersion")]
+    protocol_version: u32,
+    #[serde(rename = "enginePid")]
+    engine_pid: u32,
+    #[serde(rename = "microphoneLevel01")]
+    microphone_level_01: f32,
+    #[serde(rename = "mixedLevel01")]
+    mixed_level_01: f32,
+    underruns: u32,
+    error: Option<String>,
+    runtime: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -65,16 +87,42 @@ struct PlaybackStatusDto {
     signal_level_01: f32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct VirtualAudioStatusDto {
+    installed: bool,
+    ready: bool,
+    #[serde(rename = "installerAttempted")]
+    installer_attempted: bool,
+    #[serde(rename = "restartRequired")]
+    restart_required: bool,
+    error: Option<String>,
+    vendor: &'static str,
+    #[serde(rename = "renderDeviceId")]
+    render_device_id: Option<String>,
+    #[serde(rename = "renderDeviceName")]
+    render_device_name: Option<String>,
+    #[serde(rename = "microphoneDeviceId")]
+    microphone_device_id: Option<String>,
+    #[serde(rename = "microphoneName")]
+    microphone_name: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct PersistedState {
     sounds: Vec<SoundItem>,
     selected_device: Option<String>,
+    #[serde(default)]
+    selected_input_device: Option<String>,
     volume: f32,
+    #[serde(default = "default_microphone_gain")]
+    microphone_gain: f32,
+    #[serde(default)]
+    virtual_render_device: Option<String>,
+    #[serde(default)]
+    virtual_capture_device: Option<String>,
 }
 
 struct ActivePlayback {
-    _sink: MixerDeviceSink,
-    player: Player,
     sound_id: String,
     sound_name: String,
     duration_ms: u64,
@@ -85,9 +133,27 @@ struct ActivePlayback {
 struct AppState {
     sounds: Vec<SoundItem>,
     selected_device: Option<String>,
+    selected_input_device: Option<String>,
     volume: f32,
+    microphone_gain: f32,
     next_id: u64,
     playback: Option<ActivePlayback>,
+    virtual_render_device: Option<String>,
+    virtual_capture_device: Option<String>,
+}
+
+#[derive(Default)]
+struct NativeAudioRuntime {
+    engine: Option<native_audio::NativeAudioEngine>,
+    startup_error: Option<String>,
+}
+
+impl NativeAudioRuntime {
+    fn shutdown(&mut self) {
+        if let Some(mut engine) = self.engine.take() {
+            engine.shutdown();
+        }
+    }
 }
 
 impl AppState {
@@ -120,9 +186,25 @@ impl AppState {
         Self {
             sounds,
             selected_device: persisted.as_ref().and_then(|p| p.selected_device.clone()),
-            volume: persisted.map(|p| clamp_volume(p.volume)).unwrap_or(1.0),
+            selected_input_device: persisted
+                .as_ref()
+                .and_then(|p| p.selected_input_device.clone()),
+            volume: persisted
+                .as_ref()
+                .map(|p| clamp_volume(p.volume))
+                .unwrap_or(1.0),
+            microphone_gain: persisted
+                .as_ref()
+                .map(|p| clamp_volume(p.microphone_gain))
+                .unwrap_or_else(default_microphone_gain),
             next_id,
             playback: None,
+            virtual_render_device: persisted
+                .as_ref()
+                .and_then(|p| p.virtual_render_device.clone()),
+            virtual_capture_device: persisted
+                .as_ref()
+                .and_then(|p| p.virtual_capture_device.clone()),
         }
     }
 
@@ -130,7 +212,11 @@ impl AppState {
         let persisted = PersistedState {
             sounds: self.sounds.clone(),
             selected_device: self.selected_device.clone(),
+            selected_input_device: self.selected_input_device.clone(),
             volume: self.volume,
+            microphone_gain: self.microphone_gain,
+            virtual_render_device: self.virtual_render_device.clone(),
+            virtual_capture_device: self.virtual_capture_device.clone(),
         };
 
         let path = config_file_path()?;
@@ -216,6 +302,10 @@ fn library_dir() -> Result<PathBuf, String> {
 
 fn clamp_volume(v: f32) -> f32 {
     v.clamp(0.0, 6.0)
+}
+
+fn default_microphone_gain() -> f32 {
+    1.0
 }
 
 fn file_name_for_path(path: &Path) -> String {
@@ -348,37 +438,391 @@ fn list_output_devices_impl() -> Result<Vec<DeviceDto>, String> {
     Ok(result)
 }
 
+fn list_input_devices_impl() -> Result<Vec<DeviceDto>, String> {
+    let host = cpal::default_host();
+    let virtual_ids = virtual_audio::cable_capture_endpoints()
+        .into_iter()
+        .flat_map(|endpoint| [endpoint.cpal_id, endpoint.raw_id])
+        .collect::<Vec<_>>();
+    let devices = host
+        .input_devices()
+        .map_err(|e| format!("Nie udało się pobrać input devices: {e}"))?;
+
+    let mut result = Vec::new();
+    for device in devices {
+        let dto = device_to_dto(&device);
+        let description = device.description().ok();
+        let fingerprint = description
+            .as_ref()
+            .map(|description| {
+                [
+                    Some(description.name()),
+                    description.manufacturer(),
+                    description.driver(),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+            })
+            .unwrap_or_default();
+        let is_managed_virtual = virtual_ids
+            .iter()
+            .any(|id| id == &dto.id || id == &dto.raw_id)
+            || ((fingerprint.contains("vb-audio") || fingerprint.contains("vbaudio"))
+                && fingerprint.contains("cable"));
+        if !is_managed_virtual {
+            let display_name = description
+                .as_ref()
+                .map(|description| {
+                    let base = description.name().to_string();
+                    let base_lower = base.to_lowercase();
+                    let extra = [description.driver(), description.manufacturer()]
+                        .into_iter()
+                        .flatten()
+                        .map(|value| value.to_string())
+                        .find(|value| {
+                            let value = value.trim();
+                            !value.is_empty() && !base_lower.contains(&value.to_lowercase())
+                        });
+                    match extra {
+                        Some(extra) => format!("{base} · {extra}"),
+                        None => base,
+                    }
+                })
+                .unwrap_or_else(|| dto.name.clone());
+            result.push(DeviceDto {
+                name: display_name,
+                ..dto
+            });
+        }
+    }
+
+    result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(result)
+}
+
+fn resolve_physical_input(app: &mut AppState) -> Result<Option<DeviceDto>, String> {
+    let devices = list_input_devices_impl()?;
+    let selected = app.selected_input_device.as_ref().and_then(|selected| {
+        devices
+            .iter()
+            .find(|device| device.id == *selected || device.raw_id == *selected)
+            .cloned()
+    });
+    let default = cpal::default_host()
+        .default_input_device()
+        .and_then(|device| {
+            let candidate = device_to_dto(&device);
+            devices
+                .iter()
+                .find(|item| item.id == candidate.id || item.raw_id == candidate.raw_id)
+                .cloned()
+        });
+    let resolved = selected.or(default).or_else(|| devices.first().cloned());
+    let resolved_id = resolved.as_ref().map(|device| device.id.clone());
+    if app.selected_input_device != resolved_id {
+        app.selected_input_device = resolved_id;
+        let _ = app.persist();
+    }
+    Ok(resolved)
+}
+
+fn resolve_managed_endpoint(
+    endpoints: Vec<virtual_audio::AudioEndpoint>,
+    saved_id: Option<&str>,
+) -> Option<virtual_audio::AudioEndpoint> {
+    saved_id
+        .and_then(|id| {
+            endpoints
+                .iter()
+                .find(|endpoint| endpoint.cpal_id == id)
+                .cloned()
+        })
+        .or_else(|| endpoints.into_iter().next())
+}
+
+fn sync_virtual_audio_devices(
+    app: &mut AppState,
+) -> (
+    Option<virtual_audio::AudioEndpoint>,
+    Option<virtual_audio::AudioEndpoint>,
+) {
+    let render = resolve_managed_endpoint(
+        virtual_audio::cable_render_endpoints(),
+        app.virtual_render_device.as_deref(),
+    );
+    let capture = resolve_managed_endpoint(
+        virtual_audio::cable_capture_endpoints(),
+        app.virtual_capture_device.as_deref(),
+    );
+
+    let new_render_id = render.as_ref().map(|endpoint| endpoint.cpal_id.clone());
+    let new_capture_id = capture.as_ref().map(|endpoint| endpoint.cpal_id.clone());
+    let changed = app.virtual_render_device != new_render_id
+        || app.virtual_capture_device != new_capture_id
+        || (new_render_id.is_some() && app.selected_device != new_render_id);
+
+    app.virtual_render_device = new_render_id.clone();
+    app.virtual_capture_device = new_capture_id;
+    if new_render_id.is_some() {
+        app.selected_device = new_render_id;
+    }
+    if changed {
+        let _ = app.persist();
+    }
+
+    (render, capture)
+}
+
+#[tauri::command]
+fn get_virtual_audio_status(
+    state: tauri::State<'_, Mutex<AppState>>,
+    bootstrap: tauri::State<'_, Mutex<virtual_audio::DriverBootstrap>>,
+) -> Result<VirtualAudioStatusDto, String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    let (render, capture) = sync_virtual_audio_devices(&mut app);
+    let bootstrap = bootstrap
+        .lock()
+        .map_err(|_| "Driver state lock error".to_string())?
+        .clone();
+    let ready = render.is_some() && capture.is_some();
+
+    Ok(VirtualAudioStatusDto {
+        installed: render.is_some() || capture.is_some(),
+        ready,
+        installer_attempted: bootstrap.installer_attempted,
+        restart_required: bootstrap.restart_required || (bootstrap.installer_attempted && !ready),
+        error: bootstrap.error,
+        vendor: "VB-Audio / VB-CABLE Pack45",
+        render_device_id: render.as_ref().map(|endpoint| endpoint.cpal_id.clone()),
+        render_device_name: render.map(|endpoint| endpoint.name),
+        microphone_device_id: capture.as_ref().map(|endpoint| endpoint.cpal_id.clone()),
+        microphone_name: capture.map(|endpoint| endpoint.name),
+    })
+}
+
+#[tauri::command]
+fn rename_virtual_microphone(
+    name: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let capture = {
+        let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+        let (_, capture) = sync_virtual_audio_devices(&mut app);
+        capture.ok_or_else(|| {
+            "Wirtualny mikrofon nie jest jeszcze dostępny. Dokończ instalację i uruchom ponownie Windows."
+                .to_string()
+        })?
+    };
+
+    virtual_audio::rename_endpoint_elevated(&capture.raw_id, &name)
+}
+
+#[tauri::command]
+fn install_virtual_audio_driver(
+    bootstrap: tauri::State<'_, Mutex<virtual_audio::DriverBootstrap>>,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let result = virtual_audio::install_driver_now();
+    let error = result.error.clone();
+    let mut bootstrap_state = bootstrap
+        .lock()
+        .map_err(|_| "Driver state lock error".to_string())?;
+    *bootstrap_state = result;
+    drop(bootstrap_state);
+    match error {
+        Some(error) => Err(error),
+        None => {
+            let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+            let mut native = native
+                .lock()
+                .map_err(|_| "Native audio lock error".to_string())?;
+            configure_native_runtime(&mut app, &mut native)
+        }
+    }
+}
+
+fn configure_native_runtime(
+    app: &mut AppState,
+    runtime: &mut NativeAudioRuntime,
+) -> Result<(), String> {
+    let input = resolve_physical_input(app)?.ok_or_else(|| {
+        "Nie znaleziono fizycznego mikrofonu. Podłącz mikrofon i odśwież.".to_string()
+    })?;
+    let (render, capture) = sync_virtual_audio_devices(app);
+    let render = render.ok_or_else(|| {
+        "Wirtualne wyjście VB-CABLE nie jest jeszcze gotowe. Zainstaluj sterownik lub uruchom ponownie Windows."
+            .to_string()
+    })?;
+    let capture = capture.ok_or_else(|| {
+        "Wirtualny mikrofon VB-CABLE nie jest jeszcze gotowy. Uruchom ponownie Windows po instalacji sterownika."
+            .to_string()
+    })?;
+    let engine = runtime.engine.as_ref().ok_or_else(|| {
+        runtime
+            .startup_error
+            .clone()
+            .unwrap_or_else(|| "C++ audio engine nie działa".into())
+    })?;
+    engine.configure(
+        &input.raw_id,
+        &render.raw_id,
+        &capture.raw_id,
+        app.microphone_gain,
+        app.volume,
+    )?;
+    runtime.startup_error = None;
+    Ok(())
+}
+
+fn start_native_runtime(app: &mut AppState, runtime: &mut NativeAudioRuntime) {
+    runtime.engine = None;
+    runtime.startup_error = None;
+    match native_audio::NativeAudioEngine::start() {
+        Ok(engine) => {
+            runtime.engine = Some(engine);
+            if let Err(error) = configure_native_runtime(app, runtime) {
+                runtime.startup_error = Some(error);
+            }
+        }
+        Err(error) => runtime.startup_error = Some(error),
+    }
+}
+
+#[tauri::command]
+fn list_input_devices() -> Result<Vec<DeviceDto>, String> {
+    list_input_devices_impl()
+}
+
+#[tauri::command]
+fn get_selected_input_device(
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<Option<String>, String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    Ok(resolve_physical_input(&mut app)?.map(|device| device.id))
+}
+
+#[tauri::command]
+fn set_selected_input_device(
+    device_id: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let devices = list_input_devices_impl()?;
+    if !devices
+        .iter()
+        .any(|device| device.id == device_id || device.raw_id == device_id)
+    {
+        return Err("Wybrany fizyczny mikrofon już nie istnieje".into());
+    }
+
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    app.selected_input_device = Some(device_id);
+    app.persist()?;
+    let mut native = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?;
+    configure_native_runtime(&mut app, &mut native)
+}
+
+#[tauri::command]
+fn get_microphone_gain(state: tauri::State<'_, Mutex<AppState>>) -> Result<f32, String> {
+    let app = state.lock().map_err(|_| "State lock error".to_string())?;
+    Ok(app.microphone_gain)
+}
+
+#[tauri::command]
+fn set_microphone_gain(
+    gain: f32,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    app.microphone_gain = clamp_volume(gain);
+    app.persist()?;
+    if let Some(engine) = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?
+        .engine
+        .as_ref()
+    {
+        engine.set_gains(app.microphone_gain, app.volume);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_native_audio_status(
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<NativeAudioStatusDto, String> {
+    let native = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?;
+    let Some(engine) = native.engine.as_ref() else {
+        return Ok(NativeAudioStatusDto {
+            available: false,
+            ready: false,
+            state: "unavailable".into(),
+            protocol_version: 0,
+            engine_pid: 0,
+            microphone_level_01: 0.0,
+            mixed_level_01: 0.0,
+            underruns: 0,
+            error: native.startup_error.clone(),
+            runtime: "C++ / WASAPI",
+        });
+    };
+    let status = engine.status();
+    let state = match status.engine_state {
+        1 => "starting",
+        2 => "ready",
+        3 => "error",
+        _ => "stopped",
+    };
+    Ok(NativeAudioStatusDto {
+        available: status.connected,
+        ready: status.engine_state == 2,
+        state: state.into(),
+        protocol_version: status.protocol_version,
+        engine_pid: status.engine_pid,
+        microphone_level_01: status.microphone_level.clamp(0.0, 1.5),
+        mixed_level_01: status.mixed_level.clamp(0.0, 1.5),
+        underruns: status.underruns,
+        error: status.error.or_else(|| native.startup_error.clone()),
+        runtime: "C++ / WASAPI",
+    })
+}
+
+#[tauri::command]
+fn restart_native_audio_engine(
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    let mut native = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?;
+    start_native_runtime(&mut app, &mut native);
+    match &native.startup_error {
+        Some(error) => Err(error.clone()),
+        None => Ok(()),
+    }
+}
+
 fn device_to_dto(device: &cpal::Device) -> DeviceDto {
     let name = device
         .description()
         .map(|description| description.name().to_string())
         .unwrap_or_else(|_| "Unknown device".to_string());
-    let id = device
+    let (id, raw_id) = device
         .id()
-        .map(|id| id.to_string())
-        .unwrap_or_else(|_| name.clone());
+        .map(|id| (id.to_string(), id.1))
+        .unwrap_or_else(|_| (name.clone(), name.clone()));
 
-    DeviceDto { id, name }
-}
-
-fn find_output_device(device_name: Option<&str>) -> Result<cpal::Device, String> {
-    let host = cpal::default_host();
-
-    if let Some(device_name) = device_name {
-        let devices = host
-            .output_devices()
-            .map_err(|e| format!("Nie udało się pobrać output devices: {e}"))?;
-
-        for device in devices {
-            let dto = device_to_dto(&device);
-            if dto.id == device_name || dto.name == device_name {
-                return Ok(device);
-            }
-        }
-    }
-
-    host.default_output_device()
-        .ok_or_else(|| "Brak dostępnego urządzenia wyjściowego".to_string())
+    DeviceDto { id, raw_id, name }
 }
 
 fn add_sound_path(app: &mut AppState, path: PathBuf) -> Result<(), String> {
@@ -498,11 +942,23 @@ fn import_from_url(
 }
 
 #[tauri::command]
-fn remove_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn remove_sound(
+    id: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
     app.sounds.retain(|s| s.id != id);
     if app.playback.as_ref().map(|p| p.sound_id.as_str()) == Some(id.as_str()) {
         app.playback = None;
+        if let Some(engine) = native
+            .lock()
+            .map_err(|_| "Native audio lock error".to_string())?
+            .engine
+            .as_ref()
+        {
+            engine.stop_sound();
+        }
     }
     app.persist()
 }
@@ -531,11 +987,19 @@ fn set_selected_device(
 fn get_selected_device(state: tauri::State<'_, Mutex<AppState>>) -> Result<Option<String>, String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
     let devices = list_output_devices_impl()?;
-    let resolved_selected = app.selected_device.as_ref().and_then(|selected| {
+    let managed_device = app.virtual_render_device.as_ref().and_then(|selected| {
         devices
             .iter()
             .find(|device| device.id == *selected || device.name == *selected)
             .map(|device| device.id.clone())
+    });
+    let resolved_selected = managed_device.or_else(|| {
+        app.selected_device.as_ref().and_then(|selected| {
+            devices
+                .iter()
+                .find(|device| device.id == *selected || device.name == *selected)
+                .map(|device| device.id.clone())
+        })
     });
 
     if resolved_selected.is_none() || resolved_selected != app.selected_device {
@@ -554,11 +1018,20 @@ fn get_selected_device(state: tauri::State<'_, Mutex<AppState>>) -> Result<Optio
 }
 
 #[tauri::command]
-fn set_volume(volume: f32, state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn set_volume(
+    volume: f32,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
     app.volume = clamp_volume(volume);
-    if let Some(playback) = &app.playback {
-        playback.player.set_volume(app.volume);
+    if let Some(engine) = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?
+        .engine
+        .as_ref()
+    {
+        engine.set_gains(app.microphone_gain, app.volume);
     }
     app.persist()
 }
@@ -570,14 +1043,29 @@ fn get_volume(state: tauri::State<'_, Mutex<AppState>>) -> Result<f32, String> {
 }
 
 #[tauri::command]
-fn stop_playback(state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn stop_playback(
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
     app.playback = None;
+    if let Some(engine) = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?
+        .engine
+        .as_ref()
+    {
+        engine.stop_sound();
+    }
     Ok(())
 }
 
 #[tauri::command]
-fn play_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn play_sound(
+    id: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
     let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
 
     let sound_index = app
@@ -597,25 +1085,20 @@ fn play_sound(id: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<()
     }
 
     let sound = app.sounds[sound_index].clone();
-    let device = find_output_device(app.selected_device.as_deref())?;
-    let file = File::open(&sound.path).map_err(|e| format!("Nie udało się otworzyć pliku: {e}"))?;
-    let reader = BufReader::new(file);
-
     app.playback = None;
-
-    let mut sink = DeviceSinkBuilder::default()
-        .with_device(device)
-        .open_stream()
-        .map_err(|e| format!("Nie udało się otworzyć output stream: {e}"))?;
-    sink.log_on_drop(false);
-
-    let player = rodio_play(sink.mixer(), reader)
-        .map_err(|e| format!("Nie udało się odtworzyć pliku: {e}"))?;
-    player.set_volume(app.volume);
+    let native = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?;
+    let engine = native.engine.as_ref().ok_or_else(|| {
+        native
+            .startup_error
+            .clone()
+            .unwrap_or_else(|| "C++ audio engine nie działa".into())
+    })?;
+    engine.set_gains(app.microphone_gain, app.volume);
+    engine.play_file(Path::new(&sound.path))?;
 
     app.playback = Some(ActivePlayback {
-        _sink: sink,
-        player,
         sound_id: sound.id,
         sound_name: sound.name,
         duration_ms: sound.duration_ms,
@@ -636,19 +1119,31 @@ fn get_playback_status(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(AppState::load()))
+        .manage(Mutex::new(virtual_audio::DriverBootstrap::default()))
+        .manage(Mutex::new(NativeAudioRuntime::default()))
         .invoke_handler(tauri::generate_handler![
             list_sounds,
             add_sounds,
             import_from_url,
             remove_sound,
             list_output_devices,
+            list_input_devices,
+            get_virtual_audio_status,
+            install_virtual_audio_driver,
+            rename_virtual_microphone,
             set_selected_device,
             get_selected_device,
+            set_selected_input_device,
+            get_selected_input_device,
             set_volume,
             get_volume,
+            set_microphone_gain,
+            get_microphone_gain,
+            get_native_audio_status,
+            restart_native_audio_engine,
             play_sound,
             stop_playback,
             get_playback_status
@@ -656,9 +1151,47 @@ pub fn run() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title("Soundboard Binder");
+                let should_hide = !cfg!(debug_assertions)
+                    && !virtual_audio::driver_is_ready()
+                    && std::env::var_os("SOUNDBOARD_SKIP_DRIVER_INSTALL").is_none();
+                if should_hide {
+                    let _ = window.hide();
+                }
+
+                let driver_status = virtual_audio::bootstrap_driver();
+                if let Ok(mut state) = app.state::<Mutex<virtual_audio::DriverBootstrap>>().lock() {
+                    *state = driver_status;
+                }
+
+                if let (Ok(mut app_state), Ok(mut native_state)) = (
+                    app.state::<Mutex<AppState>>().lock(),
+                    app.state::<Mutex<NativeAudioRuntime>>().lock(),
+                ) {
+                    start_native_runtime(&mut app_state, &mut native_state);
+                }
+
+                if should_hide {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if matches!(
+            event,
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+        ) {
+            if let Ok(mut native) = app_handle.state::<Mutex<NativeAudioRuntime>>().lock() {
+                native.shutdown();
+            }
+        }
+    });
+}
+
+pub fn rename_audio_endpoint_helper(raw_endpoint_id: &str, name: &str) -> Result<(), String> {
+    virtual_audio::rename_endpoint_helper(raw_endpoint_id, name)
 }

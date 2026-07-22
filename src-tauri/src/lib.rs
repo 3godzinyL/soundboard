@@ -116,6 +116,10 @@ struct PersistedState {
     volume: f32,
     #[serde(default = "default_microphone_gain")]
     microphone_gain: f32,
+    #[serde(default = "default_sound_overdrive")]
+    sound_overdrive: f32,
+    #[serde(default = "default_monitor_gain")]
+    monitor_gain: f32,
     #[serde(default)]
     virtual_render_device: Option<String>,
     #[serde(default)]
@@ -136,6 +140,8 @@ struct AppState {
     selected_input_device: Option<String>,
     volume: f32,
     microphone_gain: f32,
+    sound_overdrive: f32,
+    monitor_gain: f32,
     next_id: u64,
     playback: Option<ActivePlayback>,
     virtual_render_device: Option<String>,
@@ -197,6 +203,14 @@ impl AppState {
                 .as_ref()
                 .map(|p| clamp_volume(p.microphone_gain))
                 .unwrap_or_else(default_microphone_gain),
+            sound_overdrive: persisted
+                .as_ref()
+                .map(|p| clamp_overdrive(p.sound_overdrive))
+                .unwrap_or_else(default_sound_overdrive),
+            monitor_gain: persisted
+                .as_ref()
+                .map(|p| clamp_monitor_gain(p.monitor_gain))
+                .unwrap_or_else(default_monitor_gain),
             next_id,
             playback: None,
             virtual_render_device: persisted
@@ -215,6 +229,8 @@ impl AppState {
             selected_input_device: self.selected_input_device.clone(),
             volume: self.volume,
             microphone_gain: self.microphone_gain,
+            sound_overdrive: self.sound_overdrive,
+            monitor_gain: self.monitor_gain,
             virtual_render_device: self.virtual_render_device.clone(),
             virtual_capture_device: self.virtual_capture_device.clone(),
         };
@@ -229,6 +245,10 @@ impl AppState {
             .map_err(|e| format!("Nie udało się zapisać JSON: {e}"))?;
         fs::write(path, json).map_err(|e| format!("Nie udało się zapisać configu: {e}"))?;
         Ok(())
+    }
+
+    fn effective_sound_gain(&self) -> f32 {
+        (self.volume * self.sound_overdrive).clamp(0.0, 24.0)
     }
 
     fn playback_status(&mut self) -> PlaybackStatusDto {
@@ -306,6 +326,30 @@ fn clamp_volume(v: f32) -> f32 {
 
 fn default_microphone_gain() -> f32 {
     1.0
+}
+
+fn clamp_overdrive(v: f32) -> f32 {
+    if v.is_finite() {
+        v.clamp(1.0, 4.0)
+    } else {
+        1.0
+    }
+}
+
+fn default_sound_overdrive() -> f32 {
+    1.0
+}
+
+fn clamp_monitor_gain(v: f32) -> f32 {
+    if v.is_finite() {
+        v.clamp(0.0, 2.0)
+    } else {
+        0.0
+    }
+}
+
+fn default_monitor_gain() -> f32 {
+    0.0
 }
 
 fn file_name_for_path(path: &Path) -> String {
@@ -672,8 +716,9 @@ fn configure_native_runtime(
         &render.raw_id,
         &capture.raw_id,
         app.microphone_gain,
-        app.volume,
+        app.effective_sound_gain(),
     )?;
+    engine.set_monitor_gain(app.monitor_gain);
     runtime.startup_error = None;
     Ok(())
 }
@@ -749,7 +794,59 @@ fn set_microphone_gain(
         .engine
         .as_ref()
     {
-        engine.set_gains(app.microphone_gain, app.volume);
+        engine.set_gains(app.microphone_gain, app.effective_sound_gain());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_sound_overdrive(state: tauri::State<'_, Mutex<AppState>>) -> Result<f32, String> {
+    let app = state.lock().map_err(|_| "State lock error".to_string())?;
+    Ok(app.sound_overdrive)
+}
+
+#[tauri::command]
+fn set_sound_overdrive(
+    overdrive: f32,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    app.sound_overdrive = clamp_overdrive(overdrive);
+    app.persist()?;
+    if let Some(engine) = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?
+        .engine
+        .as_ref()
+    {
+        engine.set_gains(app.microphone_gain, app.effective_sound_gain());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_monitor_gain(state: tauri::State<'_, Mutex<AppState>>) -> Result<f32, String> {
+    let app = state.lock().map_err(|_| "State lock error".to_string())?;
+    Ok(app.monitor_gain)
+}
+
+#[tauri::command]
+fn set_monitor_gain(
+    gain: f32,
+    state: tauri::State<'_, Mutex<AppState>>,
+    native: tauri::State<'_, Mutex<NativeAudioRuntime>>,
+) -> Result<(), String> {
+    let mut app = state.lock().map_err(|_| "State lock error".to_string())?;
+    app.monitor_gain = clamp_monitor_gain(gain);
+    app.persist()?;
+    if let Some(engine) = native
+        .lock()
+        .map_err(|_| "Native audio lock error".to_string())?
+        .engine
+        .as_ref()
+    {
+        engine.set_monitor_gain(app.monitor_gain);
     }
     Ok(())
 }
@@ -856,13 +953,26 @@ fn download_audio_to_library(url: &str) -> Result<PathBuf, String> {
     let template = library.join("%(title).120B [%(id)s].%(ext)s");
     let output_template = template.to_string_lossy().to_string();
 
+    // yt-dlp prints the final path to STDOUT in the Windows console codepage
+    // (e.g. CP1250), so decoding it as UTF-8 mangles non-ASCII filenames
+    // (ń, ż, ł…) and the resulting path fails path.exists(). --print-to-file
+    // is written in UTF-8, so we capture the path from a temp file instead.
+    let path_file = tempfile::Builder::new()
+        .prefix("soundboard-binder-ytpath-")
+        .suffix(".txt")
+        .tempfile()
+        .map_err(|e| format!("Nie udało się utworzyć pliku tymczasowego: {e}"))?
+        .into_temp_path();
+    let path_file_arg = path_file.to_string_lossy().to_string();
+
     let output = Command::new("yt-dlp")
         .args([
             "--no-playlist",
             "--windows-filenames",
             "--no-warnings",
-            "--print",
+            "--print-to-file",
             "after_move:filepath",
+            &path_file_arg,
             "-x",
             "--audio-format",
             "mp3",
@@ -890,8 +1000,9 @@ fn download_audio_to_library(url: &str) -> Result<PathBuf, String> {
         return Err(format!("Import z linku nie powiódł się: {details}"));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let final_path = stdout
+    let printed = fs::read_to_string(&path_file)
+        .map_err(|e| format!("Nie udało się odczytać ścieżki pliku z yt-dlp: {e}"))?;
+    let final_path = printed
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
@@ -1031,7 +1142,7 @@ fn set_volume(
         .engine
         .as_ref()
     {
-        engine.set_gains(app.microphone_gain, app.volume);
+        engine.set_gains(app.microphone_gain, app.effective_sound_gain());
     }
     app.persist()
 }
@@ -1095,7 +1206,7 @@ fn play_sound(
             .clone()
             .unwrap_or_else(|| "C++ audio engine nie działa".into())
     })?;
-    engine.set_gains(app.microphone_gain, app.volume);
+    engine.set_gains(app.microphone_gain, app.effective_sound_gain());
     engine.play_file(Path::new(&sound.path))?;
 
     app.playback = Some(ActivePlayback {
@@ -1142,6 +1253,10 @@ pub fn run() {
             get_volume,
             set_microphone_gain,
             get_microphone_gain,
+            get_sound_overdrive,
+            set_sound_overdrive,
+            get_monitor_gain,
+            set_monitor_gain,
             get_native_audio_status,
             restart_native_audio_engine,
             play_sound,

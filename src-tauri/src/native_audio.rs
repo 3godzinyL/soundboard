@@ -27,6 +27,7 @@ type CloseFn = unsafe extern "C" fn();
 type ResetFn = unsafe extern "C" fn() -> c_int;
 type SetDeviceFn = unsafe extern "C" fn(*const u16) -> c_int;
 type SetGainsFn = unsafe extern "C" fn(f32, f32) -> c_int;
+type SetMonitorGainFn = unsafe extern "C" fn(f32) -> c_int;
 type PushAudioFn = unsafe extern "C" fn(*const f32, u32, u32) -> u32;
 type ClearAudioFn = unsafe extern "C" fn();
 type GetStatusFn = unsafe extern "C" fn(*mut RawStatus) -> c_int;
@@ -81,6 +82,7 @@ struct Bridge {
     set_output: SetDeviceFn,
     set_virtual_capture: SetDeviceFn,
     set_gains: SetGainsFn,
+    set_monitor_gain: SetMonitorGainFn,
     push_audio: PushAudioFn,
     clear_audio: ClearAudioFn,
     get_status: GetStatusFn,
@@ -115,6 +117,9 @@ impl Bridge {
             set_gains: *library
                 .get(b"sb_set_gains\0")
                 .map_err(|error| format!("Brak sb_set_gains w native DLL: {error}"))?,
+            set_monitor_gain: *library
+                .get(b"sb_set_monitor_gain\0")
+                .map_err(|error| format!("Brak sb_set_monitor_gain w native DLL: {error}"))?,
             push_audio: *library
                 .get(b"sb_push_audio\0")
                 .map_err(|error| format!("Brak sb_push_audio w native DLL: {error}"))?,
@@ -172,6 +177,12 @@ impl Bridge {
     fn set_gains(&self, microphone_gain: f32, sound_gain: f32) {
         unsafe {
             (self.set_gains)(microphone_gain, sound_gain);
+        }
+    }
+
+    fn set_monitor_gain(&self, monitor_gain: f32) {
+        unsafe {
+            (self.set_monitor_gain)(monitor_gain);
         }
     }
 
@@ -283,6 +294,10 @@ impl NativeAudioEngine {
 
     pub fn set_gains(&self, microphone_gain: f32, sound_gain: f32) {
         self.bridge.set_gains(microphone_gain, sound_gain);
+    }
+
+    pub fn set_monitor_gain(&self, monitor_gain: f32) {
+        self.bridge.set_monitor_gain(monitor_gain);
     }
 
     pub fn status(&self) -> EngineStatus {

@@ -3,7 +3,8 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  readdirSync
+  readdirSync,
+  rmSync
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, join, resolve } from 'node:path';
@@ -54,9 +55,19 @@ function runTauri(args) {
 function copyPortable() {
   const source = join(rustReleaseDir, 'soundboard_binder.exe');
   const destination = join(releaseDir, 'Soundboard-Binder-portable.exe');
+  const rootDestination = join(projectRoot, 'Soundboard-Binder-portable.exe');
   mkdirSync(releaseDir, { recursive: true });
   copyFileSync(source, destination);
+  copyFileSync(source, rootDestination);
   console.log(`\nGotowe: ${destination}`);
+  console.log(`Kopia:  ${rootDestination}`);
+}
+
+function forcePortableRelink() {
+  const executable = join(rustReleaseDir, 'soundboard_binder.exe');
+  if (existsSync(executable)) {
+    rmSync(executable);
+  }
 }
 
 function copyInstaller() {
@@ -80,7 +91,14 @@ function copyInstaller() {
 
 const [command, ...rest] = process.argv.slice(2);
 
-if (command === 'portable') {
+if (command === 'all') {
+  forcePortableRelink();
+  runTauri(['build', '--no-bundle']);
+  copyPortable();
+  runTauri(['build', '--bundles', 'nsis']);
+  copyInstaller();
+} else if (command === 'portable') {
+  forcePortableRelink();
   runTauri(['build', '--no-bundle']);
   copyPortable();
 } else if (command === 'installer') {

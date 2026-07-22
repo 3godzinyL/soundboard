@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "node scripts/tauri.mjs",
+    "build:all": "node scripts/tauri.mjs all",
     "build:portable": "node scripts/tauri.mjs portable",
     "build:installer": "node scripts/tauri.mjs installer"
   },

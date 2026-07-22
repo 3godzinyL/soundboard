@@ -2,24 +2,26 @@
 
 # 🔊 Soundboard Binder
 
-### Lekki soundboard dla Windows, który wpina dźwięki prosto w Discorda
+### Jeden soundboard. Jeden wybrany mikrofon. Dźwięk w każdej aplikacji Windows.
 
 <p>
   <img alt="Rust" src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white">
+  <img alt="C" src="https://img.shields.io/badge/C-A8B9CC?style=for-the-badge&logo=c&logoColor=111827">
+  <img alt="C++" src="https://img.shields.io/badge/C++-00599C?style=for-the-badge&logo=cplusplus&logoColor=white">
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri_2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white">
   <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-171717?style=for-the-badge&logo=javascript&logoColor=F7DF1E">
-  <img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white">
-  <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white">
-  <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white">
 </p>
 
 <p>
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows11">
-  <img alt="Build" src="https://img.shields.io/badge/build-portable%20%2B%20installer-22c55e?style=flat-square">
-  <img alt="Audio gain" src="https://img.shields.io/badge/gain-do%20600%25-a855f7?style=flat-square">
+  <img alt="WASAPI" src="https://img.shields.io/badge/audio-WASAPI%20event--driven-7C3AED?style=flat-square">
+  <img alt="IPC" src="https://img.shields.io/badge/IPC-lock--free%2048%20kHz-EC4899?style=flat-square">
+  <img alt="Build" src="https://img.shields.io/badge/release-one%20EXE-22C55E?style=flat-square">
+  <img alt="Driver" src="https://img.shields.io/badge/driver-signed%20VB--CABLE-F59E0B?style=flat-square">
+  <img alt="No IDE" src="https://img.shields.io/badge/build-100%25%20CLI-0EA5E9?style=flat-square">
 </p>
 
-Soundboard Binder odtwarza lokalne klipy na wybranym urządzeniu audio, pamięta bibliotekę i ustawienia, pokazuje postęp oraz poziom sygnału, a z pomocą VB-CABLE przekazuje wszystko jako mikrofon do komunikatora.
+Soundboard Binder miesza **Twój fizyczny mikrofon + dowolny bind** w natywnym silniku C++ i wystawia gotowy sygnał jako **domyślny mikrofon Windows**. Bez VoiceMeetera, bez „Nasłuchuj tego urządzenia”, bez ręcznego klikania w panelu VB-CABLE. Discord, gra czy przeglądarka po prostu słyszą Ciebie **i** Twoje bindy.
 
 </div>
 
@@ -28,9 +30,7 @@ Soundboard Binder odtwarza lokalne klipy na wybranym urządzeniu audio, pamięta
 <table align="center">
   <thead>
     <tr>
-      <th align="center">
-        🟣 &nbsp; SOUNDBOARD BINDER &nbsp; / &nbsp; LIVE DEMO &nbsp; 🟢
-      </th>
+      <th align="center">🟣 &nbsp; SOUNDBOARD BINDER &nbsp; / &nbsp; LIVE DEMO &nbsp; 🟢</th>
     </tr>
   </thead>
   <tbody>
@@ -52,90 +52,171 @@ Soundboard Binder odtwarza lokalne klipy na wybranym urządzeniu audio, pamięta
 </table>
 
 <p align="center">
-  <sub>Okładka ładuje się natychmiast. GIF jest pobierany po rozwinięciu demonstracji.</sub>
+  <sub>Lekka okładka ładuje się od razu. Ciężki GIF pojawia się dopiero po rozwinięciu sekcji — README GitHuba nie pozwala uruchomić własnego JavaScriptowego loadera.</sub>
 </p>
 
 ---
 
-## ⚡ Uruchomienie — patologicznie prosto
+## 📑 Spis treści
 
-### 1. Zainstaluj aplikację
+- [Dlaczego to jest inne](#-dlaczego-to-jest-inne)
+- [Funkcje w pigułce](#-funkcje-w-pigułce)
+- [Użycie — patologicznie proste](#-użycie--patologicznie-proste)
+- [Jak wpuścić binda do Discorda](#-jak-wpuścić-binda-do-discorda)
+- [Jak płynie dźwięk](#-jak-płynie-dźwięk)
+- [Co jest ciekawego pod maską](#-co-jest-ciekawego-pod-maską)
+- [Jeden EXE — co jest w środku](#-jeden-exe--co-dokładnie-jest-w-środku)
+- [Uruchomienie ze źródeł](#️-uruchomienie-ze-źródeł)
+- [Struktura projektu](#️-struktura-projektu)
+- [Najczęstsze problemy](#-najczęstsze-problemy)
 
-Pobierz **`Soundboard-Binder-Setup.exe`** z zakładki [Releases](../../releases/latest) i uruchom. To jeden instalator EXE z dołączonym WebView2 — nie potrzebuje Node.js, npm ani Rusta na komputerze użytkownika.
+---
 
-> Windows może pokazać ostrzeżenie SmartScreen, dopóki plik nie zostanie podpisany certyfikatem code-signing.
+## 🎯 Dlaczego to jest inne
 
-### 2. Zainstaluj podpisany wirtualny kabel
+Klasyczny soundboard każe Ci ręcznie spinać wirtualne kable, włączać „nasłuchiwanie urządzenia” i modlić się, żeby Discord to złapał. Soundboard Binder robi to za Ciebie:
 
-1. Pobierz najnowszy **VB-CABLE Driver Pack** z [oficjalnej strony VB-Audio](https://vb-audio.com/Cable/).
-2. Rozpakuj paczkę.
-3. Uruchom instalator sterownika jako administrator.
-4. Po instalacji uruchom ponownie komputer.
+- **Cała trasa audio jest zarządzana przez aplikację.** Wybierasz swój prawdziwy mikrofon w jednym dropdownie i to koniec konfiguracji.
+- **Miks powstaje natywnie w C++,** nie w JavaScript i nie w przeglądarce — hot path capture/render siedzi bezpośrednio na WASAPI.
+- **Wirtualny mikrofon staje się domyślnym urządzeniem Windows** dla wszystkich trzech ról (Console, Multimedia, Communications), więc aplikacje na „Default” przełączają się same.
+- **Jeden plik do pobrania.** Sterownik, natywny silnik i biblioteka C są zaszyte w EXE.
 
-VB-CABLE tworzy parę urządzeń. To, co aplikacja wysyła do wejścia kabla, pojawia się po drugiej stronie jako wirtualny mikrofon.
+---
 
-> VB-CABLE jest oprogramowaniem donationware autorstwa [VB-Audio](https://vb-audio.com/). Jeżeli jest dla Ciebie przydatne, możesz wesprzeć jego twórców lub kupić licencję na stronie producenta.
+## ✨ Funkcje w pigułce
 
-### 3. Ustaw routing
-
-| Gdzie | Co wybrać |
+| Obszar | Co dostajesz |
 |---|---|
-| Soundboard Binder → **Output device** | `CABLE In 16ch` lub `CABLE Input` |
-| Discord → **Ustawienia → Głos i wideo → Urządzenie wejściowe** | `CABLE Output (VB-Audio Virtual Cable)` |
-| Discord → **Urządzenie wyjściowe** | Twoje normalne słuchawki/głośniki |
+| 🎙️ **Miks na żywo** | Twój głos + dowolny bind w jednym strumieniu, mieszane w czasie rzeczywistym w C++ |
+| 🎚️ **Niezależne wzmocnienia** | `Microphone gain` 0–300% i `Soundboard gain` (turbo) 0–600% — oba w jednym panelu, z miękkim limiterem `tanh` na końcu |
+| 🧭 **Routing systemowy** | Wirtualny mikrofon ustawiany jako domyślny dla ról Console / Multimedia / Communications, z przywróceniem poprzedniego stanu |
+| 📊 **Podgląd na żywo** | Mierniki `MIC` i `FINAL MIX`, licznik XRUN, PID ukrytego silnika, wersja protokołu IPC |
+| ⏹️ **Sterowanie odtwarzaniem** | Play z kafelka, `Stop playback` i restart silnika bezpośrednio w panelu Native Audio Engine |
+| 🏷️ **Nazwa mikrofonu** | Zmieniasz nazwę wirtualnego mikrofonu widoczną w Discordzie / grach jednym kliknięciem (z elewacją UAC) |
+| 🔎 **Czytelne urządzenia** | Lista mikrofonów pokazuje pełną etykietę (`nazwa · sterownik/producent`), żeby jednoznacznie trafić we własny sprzęt |
+| ⬇️ **Import z URL** | YouTube / Shorts / TikTok przez `yt-dlp` + `ffmpeg` (opcjonalne), plus lokalne MP3/WAV/FLAC/OGG/M4A/AAC |
+| 🛡️ **Bezpieczny sterownik** | Oficjalny, podpisany VB-CABLE Pack45 zaszyty w aplikacji i weryfikowany po SHA-256 przed instalacją |
+| 🧵 **Osobny proces audio** | Silnik działa poza WebView; heartbeat wykrywa śmierć UI i bezpiecznie kończy strumień |
 
-```text
-Soundboard Binder
-       │
-       ▼
-CABLE In 16ch / CABLE Input
-       │  VB-CABLE
-       ▼
-CABLE Output
-       │
-       ▼
-Discord jako mikrofon
+---
+
+## ⚡ Użycie — patologicznie proste
+
+### 1. Uruchom jeden plik
+
+Pobierz **`Soundboard-Binder-Setup.exe`** z [Releases](../../releases/latest) i uruchom go. Użytkownik końcowy nie instaluje Node.js, npm, Rusta, Visual Studio ani osobnych DLL-ek.
+
+Możesz też użyć **`Soundboard-Binder-portable.exe`** — to jeden surowy plik aplikacji, ale komputer musi już mieć Microsoft WebView2 Runtime.
+
+### 2. Przy pierwszym starcie zaakceptuj UAC
+
+Jeśli VB-CABLE nie jest zainstalowany, aplikacja automatycznie:
+
+1. sprawdza SHA-256 osadzonej, oficjalnej paczki `VBCABLE_Driver_Pack45.zip`;
+2. rozpakowuje ją wyłącznie do katalogu tymczasowego;
+3. uruchamia w tle podpisany instalator VB-Audio z uprawnieniami administratora;
+4. sprząta pliki tymczasowe i uruchamia własny interfejs.
+
+Nie otwiera się `VBCABLE_ControlPanel.exe`. Po instalacji Windows może wymagać jednego restartu — aplikacja pokaże wtedy komunikat.
+
+> Sterownik pozostaje niezmodyfikowanym **VB-CABLE Pack45** autorstwa [VB-Audio](https://vb-audio.com/Cable/). To oprogramowanie donationware. Źródło paczki, zasady dystrybucji i hash znajdują się w [`src-tauri/resources/vbcable/NOTICE.md`](src-tauri/resources/vbcable/NOTICE.md).
+
+### 3. Wybierz swój prawdziwy mikrofon
+
+W panelu **Native audio engine** rozwiń **„Your real microphone”** i wybierz sprzęt, z którego normalnie mówisz (np. mikrofon ze słuchawek). Lista pokazuje pełne etykiety, więc łatwo odróżnisz swój zestaw od innych urządzeń. To wszystko — silnik C++ zaczyna przechwytywać głos, a każdy bind domiesza do tego samego strumienia.
+
+W tym samym panelu masz komplet sterowania:
+
+- `Microphone gain` — poziom głosu przed miksem (0–300%);
+- `Soundboard gain` — booster bindów z zakresem turbo (0–600%);
+- mierniki `MIC` i `FINAL MIX` na żywo;
+- `Stop playback` — natychmiast ucina grający bind;
+- PID silnika, wersję protokołu IPC, licznik XRUN i bezpieczny restart audio engine.
+
+### 4. Dodaj plik i kliknij Play
+
+Obsługiwane są m.in. MP3, WAV, FLAC, OGG, M4A i AAC. Soundboard dekoduje plik do stereo 48 kHz, przesyła PCM przez pamięć współdzieloną i miesza go z mikrofonem bez zapisywania pliku pośredniego. Możesz też wkleić link i wciągnąć audio przez `yt-dlp`.
+
+### 5. Discord, gry, przeglądarka i reszta
+
+Przy starcie Soundboard Binder ustawia swój wirtualny mikrofon jako domyślny dla trzech ról Windows. Programy używające opcji **Default / Domyślne urządzenie** przełączą się automatycznie. Szczegóły dla Discorda niżej.
+
+---
+
+## 🎧 Jak wpuścić binda do Discorda
+
+Ten sam poradnik jest **wbudowany w aplikację** (panel „Hear binds in Discord”), ale zostaje też tutaj:
+
+1. Otwórz ustawienia głosu — w Discordzie to **Ustawienia użytkownika → Głos i wideo**.
+2. **Urządzenie wejściowe → `Default`** albo wprost nazwa Twojego wirtualnego mikrofonu (np. `Soundboard Binder Microphone`).
+3. **Wyłącz** Redukcję szumów / Krisp, Echo Cancellation i Automatyczną regulację czułości — traktują bind jak szum i go wyciszają.
+4. Jeśli bind dalej ucina, obniż próg czułości wejścia albo przełącz na „Naciśnij, aby mówić”.
+
+> **Uwaga na częsty błąd:** nie przypinaj w Discordzie bezpośrednio swojego fizycznego mikrofonu i nie rób go domyślnym w Windows. Twój głos idzie wtedy z pominięciem miksu, a bindy żyją **wyłącznie** na wirtualnym kablu. Prawdziwy mikrofon wybierasz **w aplikacji**, a Discorda zostawiasz na `Default`.
+
+Po normalnym wyjściu aplikacja natychmiast przywraca wcześniejsze urządzenia domyślne. Po awarii robi to watchdog silnika po utracie heartbeat. Jeśli w trakcie działania ręcznie zmienisz mikrofon Windows na inny, Soundboard Binder nie nadpisze tej decyzji przy zamykaniu.
+
+---
+
+## 🧭 Jak płynie dźwięk
+
+```mermaid
+flowchart LR
+    Mic["Fizyczny mikrofon"] --> Capture["C++ WASAPI capture"]
+    Files["MP3 / WAV / FLAC / OGG"] --> Decode["Rust decoder → 48 kHz stereo"]
+    Decode --> IPC["C ABI DLL + lock-free shared memory"]
+    IPC --> Mixer["C++ mixer + gain + soft limiter"]
+    Capture --> Mixer
+    Mixer --> Render["WASAPI render"]
+    Render --> Driver["Podpisany VB-CABLE"]
+    Driver --> VirtualMic["Domyślny mikrofon Windows"]
+    VirtualMic --> Apps["Discord / gra / OBS / przeglądarka / dowolna aplikacja"]
 ```
 
-### 4. Dodaj dźwięk i graj
+To nie jest wstrzykiwanie DLL do Discorda ani hookowanie obcych procesów. Zarówno Rust, jak i ukryty proces C++ ładują własną DLL C. Komunikacja odbywa się przez wersjonowaną pamięć współdzieloną i eventy Windows.
 
-1. Kliknij **Add local audio**.
-2. Wybierz plik MP3, WAV, FLAC, OGG, M4A albo AAC.
-3. Ustaw głośność — maksymalnie **600%**.
-4. Kliknij **Play**.
+---
 
-Jeżeli Discord wycina krótkie klipy, wyłącz dla testu **Krisp / tłumienie szumów**, automatyczną czułość wejścia i automatyczną regulację wzmocnienia.
+## 🧠 Co jest ciekawego pod maską
 
-### Chcesz jednocześnie mówić i puszczać dźwięki?
+- **Natywny hot path.** Capture i render działają bezpośrednio na WASAPI w trybie event-driven, z wątkiem MMCSS. Callback renderujący nie alokuje pamięci na stercie.
+- **Lock-free audio IPC.** Dwusekundowy bufor SPSC przenosi stereo `float32` przy 48 kHz pomiędzy Rustem i C++ bez serializacji JSON i bez lokalnego serwera.
+- **Osobny proces audio.** Zawieszenie WebView nie zatrzymuje od razu strumienia. Heartbeat wykrywa śmierć UI i bezpiecznie kończy engine.
+- **Miks głosu i bindów.** Wzmocnienie mikrofonu i soundboardu jest niezależne, a na końcu działa miękki limiter `tanh`, który ogranicza brutalny clipping przy zakresie turbo.
+- **System-wide routing.** Silnik zapisuje wcześniejsze endpointy dla ról Console, Multimedia i Communications, przełącza Windows na wirtualny miks i warunkowo przywraca poprzedni stan (nieudokumentowany `IPolicyConfig`).
+- **Zmiana nazwy urządzenia.** Nazwa wirtualnego mikrofonu jest zapisywana jako `PKEY_Device_FriendlyName` na endpoincie kabla — w elewowanym procesie pomocniczym.
+- **Stabilne urządzenia.** Konfiguracja przechowuje surowe identyfikatory endpointów WASAPI, nie tylko zmienne nazwy widoczne w panelu dźwięku.
+- **Płynne UI bez migotania.** Interfejs aktualizuje mierniki i pasek postępu punktowo; pełne przerysowanie odpala się tylko przy realnej zmianie stanu, więc kafelki nie „skaczą” pod kursorem.
+- **Jedna instancja.** Nazwane mutexy chronią zarówno aplikację, jak i engine przed dwoma procesami walczącymi o wspólny routing.
+- **Jeden plik do dystrybucji.** DLL C i EXE C++ są kompilowane przez `build.rs`, osadzane przez `include_bytes!`, a potem wypakowywane do wersjonowanego katalogu `%LOCALAPPDATA%\soundboard-binder\native\<hash>`.
+- **Sterownik z kontrolą integralności.** Oficjalna paczka VB-CABLE jest zaszyta w aplikacji i przed instalacją sprawdzana względem znanego SHA-256.
+- **Import URL jest opcjonalny.** YouTube / Shorts / TikTok korzystają z zewnętrznych `yt-dlp` i `ffmpeg`; lokalny soundboard nie potrzebuje tych narzędzi.
 
-Discord z wejściem `CABLE Output` słyszy kabel, a nie bezpośrednio fizyczny mikrofon. Głos trzeba więc domieszać do tego samego kabla:
+---
 
-- najlepiej przez **VoiceMeeter** — mikrofon i soundboard trafiają na jedno wyjście wirtualne;
-- najprościej przez Windows: **Mikrofon → Właściwości → Nasłuchiwanie → Nasłuchuj tego urządzenia**, a jako urządzenie odtwarzające wybierz `CABLE Input`. Ta metoda może dodać niewielkie opóźnienie.
+## 📦 Jeden EXE — co dokładnie jest w środku
 
-## 📦 Jeden EXE: instalator czy portable?
-
-Projekt produkuje dwa świadomie rozdzielone warianty:
-
-| Wariant | Zastosowanie | Wynik |
+| Wariant | Dla kogo | Wynik |
 |---|---|---|
-| **Setup** — zalecany | Dla zwykłego użytkownika; instaluje aplikację i ma offline’owy WebView2 | `release/Soundboard-Binder-Setup.exe` |
-| **Portable** | Jeden surowy plik aplikacji; Windows musi już mieć WebView2 | `release/Soundboard-Binder-portable.exe` |
+| **Setup** — zalecany | zwykły użytkownik, WebView2 offline | `release/Soundboard-Binder-Setup.exe` |
+| **Portable** | komputer z istniejącym WebView2 | `release/Soundboard-Binder-portable.exe` |
 
-Frontend, CSS, JavaScript i backend Rust są zaszyte w pliku programu. Do zwykłego odtwarzania lokalnych dźwięków nie trzeba kopiować obok żadnego folderu `dist`, DLL-ek ani `node_modules`.
+Oba warianty zawierają frontend, backend Rust, natywną DLL C, ukryty engine C++ i oficjalną paczkę sterownika. Są jednym plikiem **do pobrania i uruchomienia**. Windowsowy sterownik oraz natywne komponenty muszą jednak fizycznie istnieć na dysku podczas działania, dlatego program instaluje sterownik w systemie i wypakowuje własny runtime do LocalAppData. Tego ograniczenia Windows nie da się uczciwie ominąć „magicznym EXE”.
 
-Import z YouTube / Shorts / TikToka jest funkcją opcjonalną i nadal korzysta z zewnętrznych narzędzi [`yt-dlp`](https://github.com/yt-dlp/yt-dlp/releases/latest) oraz [`ffmpeg`](https://ffmpeg.org/download.html). Oba polecenia muszą być dostępne w systemowym `PATH`.
+---
 
 ## 🛠️ Uruchomienie ze źródeł
 
-### Wymagania deweloperskie
+### Wymagania
 
-- Windows 10 lub 11,
-- [Node.js](https://nodejs.org/) 20+,
-- [Rust stable](https://rustup.rs/),
-- Microsoft C++ Build Tools,
-- WebView2 Runtime,
-- opcjonalnie `yt-dlp` + `ffmpeg` dla importu URL.
+- Windows 10 lub 11 x64;
+- [Node.js](https://nodejs.org/) 20+;
+- [Rust stable](https://rustup.rs/) (toolchain MSVC);
+- Visual Studio 2022 lub Build Tools z workloadem **Desktop development with C++**;
+- WebView2 Runtime;
+- opcjonalnie `yt-dlp` + `ffmpeg` dla importu z URL.
+
+> **Nie musisz otwierać Visual Studio ani dodawać plików do żadnego projektu.** [`src-tauri/build.rs`](src-tauri/build.rs) sam wykrywa MSVC przez `vswhere`, kompiluje C i C++ poleceniem `cl` i osadza wyniki w binarce Rusta. Cały build jest sterowany komendami npm — IDE potrzebujesz tylko raz, żeby zainstalować sam kompilator C++.
 
 ### Development
 
@@ -144,111 +225,123 @@ npm install
 npm run tauri dev
 ```
 
-Skrypt uruchomieniowy sam dopisuje `%USERPROFILE%\.cargo\bin` do `PATH` procesu, jeśli Rust jest tam zainstalowany. Dzięki temu projekt uruchomi się również wtedy, gdy Windows zgubił użytkownikowi wpis `cargo` w zmiennej środowiskowej.
+Frontend przeładowuje się na żywo, Rust rekompiluje się przy zmianach, a natywny C/C++ tylko wtedy, gdy zmienią się jego pliki źródłowe. Skrypt [`scripts/tauri.mjs`](scripts/tauri.mjs) automatycznie dopisuje `%USERPROFILE%\.cargo\bin` do `PATH` uruchamianego procesu, naprawiając błąd:
 
-### Build pojedynczego instalatora
+```text
+failed to run cargo metadata: program not found
+```
+
+Jeśli chcesz naprawić `cargo` również globalnie dla nowych terminali:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "Path",
+  [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:USERPROFILE\.cargo\bin",
+  "User"
+)
+```
+
+Potem zamknij i otwórz terminal oraz sprawdź `cargo --version`.
+
+### Build
+
+```powershell
+npm run build:all
+```
+
+Albo osobno:
 
 ```powershell
 npm run build:installer
-```
-
-Gotowy plik:
-
-```text
-release/Soundboard-Binder-Setup.exe
-```
-
-### Build pojedynczego portable EXE
-
-```powershell
 npm run build:portable
 ```
 
-Gotowy plik:
+Nie trzeba osobno uruchamiać CMake ani ręcznie kopiować DLL — wszystko robi `build.rs` i [`scripts/tauri.mjs`](scripts/tauri.mjs).
 
-```text
-release/Soundboard-Binder-portable.exe
+### Testy i diagnostyka
+
+```powershell
+cd src-tauri
+cargo test
+cargo run --example default_input
+cargo run --example native_probe
+cargo run --example native_probe -- tone
 ```
 
-## 🧠 Co jest ciekawego pod maską?
+Przykłady diagnostyczne pokazują aktualny domyślny mikrofon, status IPC/engine oraz potrafią wysłać kontrolny ton 440 Hz do działającego miksera.
 
-```mermaid
-flowchart LR
-    UI["UI: Vite + JavaScript"] -->|"Tauri invoke"| Rust["Backend Rust"]
-    Rust --> Library["Biblioteka + state.json"]
-    Rust --> Decode["rodio / dekodowanie"]
-    Decode --> CPAL["cpal / wybrane urządzenie"]
-    CPAL --> Cable["VB-CABLE"]
-    Cable --> Discord["Discord / voice chat"]
-```
-
-- **Zero lokalnego serwera.** UI rozmawia z Rustem przez komendy Tauri (`invoke`), a nie przez HTTP.
-- **Prawdziwy wybór urządzenia.** `cpal` enumeruje wyjścia Windows, a `rodio` otwiera strumień dokładnie na wybranym urządzeniu.
-- **Odporność na zmiany sprzętu.** Jeżeli zapisane słuchawki albo kabel znikną, aplikacja automatycznie wybiera aktualne domyślne wyjście zamiast wywalać start.
-- **Miernik bez ciężkiego DSP na żywo.** Przy dodawaniu pliku backend liczy RMS w odcinkach po około 100 ms i zapisuje lekki profil poziomu. UI może potem płynnie pokazywać dBFS bez ponownego dekodowania całego audio przy każdym odświeżeniu.
-- **Gain do `6.0`.** Suwak 600% steruje bezpośrednio głośnością aktywnego `Player`; to celowy zakres „soundboardowy”, więc łatwo również przesterować sygnał.
-- **Strumień żyje tak długo jak klip.** `MixerDeviceSink` jest trzymany w `ActivePlayback`; jego przypadkowe upuszczenie natychmiast zatrzymałoby dźwięk.
-- **Stan przetrwa restart.** Biblioteka, głośność i urządzenie są serializowane przez `serde` do `%APPDATA%\soundboard-binder\state.json`.
-- **Pobrane audio ma własny katalog.** Importy URL trafiają do `%LOCALAPPDATA%\soundboard-binder\library`.
-- **Mały artefakt portable.** W przeciwieństwie do Electrona aplikacja nie wozi całego Chromium — korzysta z systemowego WebView2.
+---
 
 ## 🗂️ Struktura projektu
 
 ```text
 soundboard-tauri-rust/
-├── src/                  # interfejs i style
+├── native-audio/
+│   ├── protocol/              # wspólny layout IPC v2 (shared memory + eventy)
+│   ├── bridge/                # DLL w C: ABI + named shared memory
+│   └── engine/                # ukryty EXE C++: WASAPI capture/render + mixer + routing
+├── src/                       # UI Vite / JavaScript / CSS
 ├── src-tauri/
-│   ├── src/lib.rs        # biblioteka, audio, routing i komendy Tauri
-│   ├── src/main.rs       # entrypoint Windows
-│   └── tauri.conf.json   # okno, bundle i instalator NSIS
-├── scripts/tauri.mjs     # odporny runner + build portable/setup
-├── docs/                 # GIF/demo README
-└── release/              # gotowe pliki EXE (lokalnie, poza gitem)
+│   ├── src/native_audio.rs    # lifecycle, FFI, ekstrakcja runtime i dekoder PCM
+│   ├── src/virtual_audio.rs   # sterownik, detekcja i nazwa endpointu
+│   ├── src/lib.rs             # state i komendy Tauri
+│   ├── src/main.rs            # single-instance + helper zmiany nazwy endpointu
+│   ├── build.rs               # kompilacja C/C++ przez MSVC i osadzanie binarek
+│   ├── examples/              # diagnostyka endpointów i IPC
+│   └── resources/vbcable/     # oficjalny Pack45 + nota licencyjna
+├── scripts/tauri.mjs          # odporny runner + build Setup/Portable
+├── docs/                      # okładka i GIF demo
+└── release/                   # lokalne artefakty produkcyjne
 ```
+
+---
 
 ## ✅ Najczęstsze problemy
 
 <details>
-<summary><strong>Tauri pisze: cargo metadata — program not found</strong></summary>
+<summary><strong>cargo metadata: program not found</strong></summary>
 
-Rust jest poza `PATH`. Ten projekt obchodzi problem przez `scripts/tauri.mjs`, jeżeli `cargo.exe` znajduje się w `%USERPROFILE%\.cargo\bin`. W nowym terminalu możesz też sprawdzić:
-
-```powershell
-cargo --version
-```
+Rust nie znajduje się w `PATH`. Użyj `npm run tauri dev`, które naprawia PATH dla procesu, albo wykonaj globalną komendę z sekcji Development i otwórz nowy terminal.
 
 </details>
 
 <details>
-<summary><strong>Aplikacja gra, ale Discord nic nie słyszy</strong></summary>
+<summary><strong>Engine pokazuje „Wybierz prawdziwy mikrofon”</strong></summary>
 
-Sprawdź parę urządzeń: aplikacja wysyła do `CABLE Input` / `CABLE In 16ch`, a Discord odbiera z `CABLE Output`. Kliknij też **Refresh devices** po podłączeniu lub ponownej instalacji kabla.
-
-</details>
-
-<details>
-<summary><strong>Portable EXE nie otwiera się na innym komputerze</strong></summary>
-
-Użyj wariantu `Setup`. Portable zakłada obecność WebView2, natomiast instalator zawiera jego offline’ową instalację. VB-CABLE jako sterownik audio nadal trzeba zainstalować osobno i zrestartować Windows.
+W panelu Native audio engine wybierz urządzenie inne niż `CABLE Output`. Fizyczny mikrofon jest źródłem, a VB-CABLE — gotowym wyjściem miksu. Lista pokazuje pełne etykiety, więc łatwiej trafić we właściwe urządzenie.
 
 </details>
 
 <details>
-<summary><strong>Import z linku nie działa</strong></summary>
+<summary><strong>Discord nie słyszy bindów</strong></summary>
 
-Sprawdź w terminalu:
+Ustaw wejście Discorda na `Default` (albo wprost nazwę wirtualnego mikrofonu) i wyłącz Redukcję szumów / Krisp, Echo Cancellation oraz Automatyczną regulację czułości — to one najczęściej wyciszają bind, traktując go jak szum. Nie przypinaj tam swojego fizycznego mikrofonu: wtedy leci sam głos, bo bindy istnieją tylko na wirtualnym kablu. Pełny poradnik jest też wbudowany w aplikację (panel „Hear binds in Discord”).
 
-```powershell
-yt-dlp --version
-ffmpeg -version
-```
+</details>
 
-Jeżeli któregoś polecenia nie ma, zainstaluj narzędzie i dodaj jego katalog do `PATH`.
+<details>
+<summary><strong>Zmiana nazwy mikrofonu „nie działa”</strong></summary>
+
+Kliknij „Apply microphone name”, zaakceptuj monit UAC, a potem zrestartuj aplikację, która ma widzieć nową nazwę (Discord cache’uje listę urządzeń). Jeśli anulujesz elewację, nazwa się nie zmieni.
+
+</details>
+
+<details>
+<summary><strong>Pierwszy start prosi o restart Windows</strong></summary>
+
+To normalne po instalacji sterownika audio. Zrestartuj system i ponownie uruchom Soundboard Binder; instalator nie powinien pojawić się drugi raz.
+
+</details>
+
+<details>
+<summary><strong>SmartScreen ostrzega przed aplikacją</strong></summary>
+
+Sterownik VB-Audio jest podpisany przez jego producenta, ale własne EXE projektu również wymaga osobnego certyfikatu Authenticode. Bez niego Windows może ostrzegać przed nowym buildem mimo poprawnego kodu i podpisanego sterownika.
 
 </details>
 
 ---
 
 <div align="center">
-  <strong>Rust robi hałas. VB-CABLE dostarcza go tam, gdzie trzeba.</strong>
+  <strong>Rust zarządza. C przenosi próbki. C++ robi hałas. 🔊</strong>
 </div>
